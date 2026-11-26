@@ -292,7 +292,7 @@ public class AdMobBridge {
     }
 
     private static Activity getActivity() {
-        return sActivity != null ? sActivity : CocosHelper.getActivity();
+        return sActivity;  // CocosHelper.getActivity() does not exist in Cocos 3.8.x
     }
 
     private static void notifyJs(final String event, final String detail) {

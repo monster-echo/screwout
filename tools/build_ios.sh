@@ -222,6 +222,17 @@ target '$SCHEME' do
   pod 'Google-Mobile-Ads-SDK'
   pod 'GoogleUserMessagingPlatform'
 end
+
+# Xcode 26 sandboxed script phases reject CocoaPods' resource-bundle copy
+# steps ("Did you forget to declare this file as an output"); turn sandboxing
+# off for every pod target.
+post_install do |installer|
+  installer.pods_project.targets.each do |t|
+    t.build_configurations.each do |bc|
+      bc.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
+    end
+  end
+end
 PODFILE
 fi
 # CocoaPods <1.16 mis-generates UMP's resource-bundle phase on Xcode 26
