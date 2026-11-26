@@ -77,6 +77,7 @@ export class UIManager extends Component {
     private _settingsNode: Node | null = null;
     private _soundBtnLbl: Label | null = null;
     private _galleryNode: Node | null = null;
+    private _galleryCountLbl: Label | null = null;
     private _galleryListRoot: Node | null = null;
 
     // Toast
@@ -699,8 +700,10 @@ export class UIManager extends Component {
             if (this._galleryNode) this._galleryNode.active = false;
         });
 
-        createLabel('title', card, 'MY ARTWORKS', 38, '#0f172a', 420, 48).node.setPosition(0, 412, 0);
-        createLabel('sub', card, 'Clear levels to craft & collect all 6 screw artworks!', 21, '#475569', 540, 32).node.setPosition(0, 364, 0);
+        createLabel('title', card, 'MY ARTWORKS', 38, '#0f172a', 420, 48).node.setPosition(0, 416, 0);
+        this._galleryCountLbl = createLabel('sub', card, 'Collected: 0 / 6', 24, '#0284c7', 420, 34);
+        this._galleryCountLbl.isBold = true;
+        this._galleryCountLbl.node.setPosition(0, 366, 0);
 
         this._galleryListRoot = new Node('gallery_grid');
         this._galleryListRoot.setParent(card);
@@ -709,11 +712,26 @@ export class UIManager extends Component {
         this._galleryNode.active = false;
     }
 
+    /**
+     * Mirrors original GbzPaintListLayer + GbzPaintListItem:
+     * - Strictly sequential collection (index 0..N-1)
+     * - idx < curIndex: Completed (full 3D screw art, no progress bar)
+     * - idx === curIndex: In Progress (partial 3D screw art + yellow progress bar)
+     * - idx > curIndex: Locked Mystery "?" (hidden until previous artwork is completed!)
+     */
     private refreshGalleryModal(): void {
         if (!this._galleryListRoot) return;
         this._galleryListRoot.removeAllChildren();
 
-        const activeId = DataManager.ins.gallery.activeArtId;
+        // Determine current sequential artwork index (first unfinished artwork)
+        let curIndex = PIXEL_GALLERY.findIndex((a) => !PixelGalleryService.isCompleted(a.id));
+        const completedCount = curIndex === -1 ? PIXEL_GALLERY.length : curIndex;
+        if (curIndex === -1) curIndex = PIXEL_GALLERY.length;
+
+        if (this._galleryCountLbl) {
+            this._galleryCountLbl.string = `Collected: ${completedCount} / ${PIXEL_GALLERY.length}`;
+        }
+
         const holeSf = ResManager.ins.getGameSprite('hole');
 
         PIXEL_GALLERY.forEach((art, idx) => {
@@ -725,50 +743,77 @@ export class UIManager extends Component {
             const filled = PixelGalleryService.getFilledCount(art.id);
             const total = art.cells.length;
             const pct = Math.round((filled / Math.max(1, total)) * 100);
-            const done = filled >= total;
-            const isSelected = art.id === activeId;
 
-            const bgHex = done ? '#fef9c3' : (isSelected ? '#e0f2fe' : '#f8fafc');
-            const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 274, 232, bgHex, 255, 22);
-            tile.setPosition(x, y, 0);
-
-            // Real mini 3D screw pixel-art thumbnail
-            const thumb = new Node('thumb');
-            thumb.setParent(tile);
-            thumb.setPosition(0, 28, 0);
-            const step = 12;
-            const half = ((art.gridSize - 1) * step) / 2;
-            for (let i = 0; i < total; i++) {
-                const cell = art.cells[i];
-                const px = cell.col * step - half;
-                const py = half - cell.row * step;
-                if (i < filled) {
+            if (idx < curIndex) {
+                // State 1: COMPLETED — clean full 3D screw art in wooden frame, no progress bar
+                const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 274, 232, '#fef9c3', 255, 22);
+                tile.setPosition(x, y, 0);
+                const wf = this.makeSpriteNode('wf', tile, 'wood_frame', 164, 164);
+                wf.setPosition(0, 18, 0);
+                const thumb = new Node('thumb');
+                thumb.setParent(wf);
+                const step = 12;
+                const half = ((art.gridSize - 1) * step) / 2;
+                for (let i = 0; i < total; i++) {
+                    const cell = art.cells[i];
                     const s = this.makeSpriteNode(`m_${i}`, thumb, `gbz_screw${cell.colorId}`, 11, 11);
-                    s.setPosition(px, py, 0);
-                } else {
-                    const h = new Node(`e_${i}`);
-                    h.setParent(thumb);
-                    h.setPosition(px, py, 0);
-                    const ui = h.addComponent(UITransform);
-                    ui.setContentSize(8, 8);
-                    const sp = h.addComponent(Sprite);
-                    sp.sizeMode = Sprite.SizeMode.CUSTOM;
-                    if (holeSf) sp.spriteFrame = holeSf;
-                    const op = h.addComponent(UIOpacity);
-                    op.opacity = 90;
+                    s.setPosition(cell.col * step - half, half - cell.row * step, 0);
                 }
+                const titleLbl = createLabel('t', tile, art.title, 22, '#0f172a', 240, 28);
+                titleLbl.isBold = true;
+                titleLbl.node.setPosition(0, -86, 0);
+            } else if (idx === curIndex) {
+                // State 2: IN PROGRESS — partial 3D screw art + yellow progress bar below
+                const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 274, 232, '#e0f2fe', 255, 22);
+                tile.setPosition(x, y, 0);
+                const wf = this.makeSpriteNode('wf', tile, 'wood_frame', 150, 150);
+                wf.setPosition(0, 30, 0);
+                const thumb = new Node('thumb');
+                thumb.setParent(wf);
+                const step = 11;
+                const half = ((art.gridSize - 1) * step) / 2;
+                for (let i = 0; i < total; i++) {
+                    const cell = art.cells[i];
+                    const px = cell.col * step - half;
+                    const py = half - cell.row * step;
+                    if (i < filled) {
+                        const s = this.makeSpriteNode(`m_${i}`, thumb, `gbz_screw${cell.colorId}`, 10, 10);
+                        s.setPosition(px, py, 0);
+                    } else {
+                        const h = new Node(`e_${i}`);
+                        h.setParent(thumb);
+                        h.setPosition(px, py, 0);
+                        const ui = h.addComponent(UITransform);
+                        ui.setContentSize(7, 7);
+                        const sp = h.addComponent(Sprite);
+                        sp.sizeMode = Sprite.SizeMode.CUSTOM;
+                        if (holeSf) sp.spriteFrame = holeSf;
+                        const op = h.addComponent(UIOpacity);
+                        op.opacity = 90;
+                    }
+                }
+                const barTrack = this.makeSpriteNode('p_track', tile, 'UI_jdt_1', 220, 28);
+                barTrack.setPosition(0, -76, 0);
+                const barFill = this.makeSpriteNode('p_fill', barTrack, 'UI_jdt_2', 220, 28);
+                barFill.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
+                barFill.setPosition(-110, 0, 0);
+                barFill.setScale(Math.max(0.06, Math.min(1, filled / Math.max(1, total))), 1, 1);
+                const pLbl = createLabel('p_lbl', barTrack, `${pct}%`, 18, '#ffffff', 160, 24);
+                pLbl.isBold = true;
+            } else {
+                // State 3: LOCKED MYSTERY "?" (matches original wenhao.active = true)
+                const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 274, 232, '#e2e8f0', 255, 22);
+                tile.setPosition(x, y, 0);
+                const qCircle = createPanel('q_bg', tile, 112, 112, '#94a3b8', 255, 56);
+                qCircle.setPosition(0, 14, 0);
+                const qLbl = createLabel('q_txt', qCircle, '?', 64, '#ffffff', 96, 80);
+                qLbl.isBold = true;
+                createLabel('lock_lbl', tile, 'LOCKED', 20, '#64748b', 180, 26).node.setPosition(0, -78, 0);
+                this.bindTap(tile, () => {
+                    AudioManager.ins.play(AudioClips.CLICK_ERROR);
+                    this.showToast('Complete current artwork to unlock!');
+                });
             }
-
-            createLabel('t', tile, art.title, 22, '#0f172a', 240, 28).node.setPosition(0, -48, 0);
-            createLabel('p', tile, done ? 'COMPLETED' : `${pct}%`, 18, done ? '#16a34a' : '#0284c7', 200, 24).node.setPosition(0, -78, 0);
-
-            this.bindTap(tile, () => {
-                AudioManager.ins.play(AudioClips.GAME_CLICK);
-                PixelGalleryService.setActiveArt(art.id);
-                this.refreshHeader();
-                if (this._galleryNode) this._galleryNode.active = false;
-                this.showToast(`Selected ${art.title}!`);
-            });
         });
     }
 
