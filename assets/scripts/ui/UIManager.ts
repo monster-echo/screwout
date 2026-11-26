@@ -252,7 +252,7 @@ export class UIManager extends Component {
             iconScale: number;
             x: number;
         }[] = [
-            { name: 'btn_skill_core', type: SkillType.UNLOCK_SLOT, label: '+1 SLOT', iconSprite: 'gbz_screw_core', iconScale: 0.88, x: -401 },
+            { name: 'btn_skill_core', type: SkillType.UNLOCK_SLOT, label: '+1 SLOT', iconSprite: 'icon_skill_slot', iconScale: 0.96, x: -401 },
             { name: 'btn_skill_screw', type: SkillType.CLEAR_TRAY, label: 'CLEAR', iconSprite: 'UI_icon3', iconScale: 0.95, x: 0 },
             { name: 'btn_skill_board', type: SkillType.SMASH_BOARD, label: 'MELT', iconSprite: 'UI_icon2', iconScale: 0.95, x: 401 },
         ];

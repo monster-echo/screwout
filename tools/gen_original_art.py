@@ -305,8 +305,11 @@ def make_3d_boxes_and_lids():
         return im.resize((128, 128), Image.Resampling.LANCZOS)
 
     slot_ico = make_3d_add_slot_icon()
-    slot_ico.save(os.path.join(UI_ORIG_DIR, "gbz_screw_core.png"))
-    slot_ico.save(os.path.join(GAMES_DIR, "gbz_screw_core.png"))
+    slot_ico.save(os.path.join(UI_ORIG_DIR, "icon_skill_slot.png"))
+    # Keep gbz_screw_core clean (without '+' badge) for the 5 top holding-tray sockets!
+    hole_core = draw_3d_socket_hole(96)
+    hole_core.save(os.path.join(UI_ORIG_DIR, "gbz_screw_core.png"))
+    hole_core.save(os.path.join(GAMES_DIR, "gbz_screw_core.png"))
 
 
 def make_glossy_acrylic_boards():
