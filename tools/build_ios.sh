@@ -51,7 +51,28 @@ IOS_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-15.0}"
 IOS_EXTRA_CXXFLAGS='$(inherited) -Wno-error=invalid-specialization -Wno-error=enum-constexpr-conversion -Wno-error=deprecated-declarations -Wno-error=deprecated-non-prototype'
 # GoogleMobileAds is Swift-built but statically linked into an ObjC-only app:
 # the linker needs the Swift static compatibility libs explicitly on the path.
-IOS_EXTRA_LDFLAGS='$(inherited) -L$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) -L$(TOOLCHAIN_DIR)/usr/lib/swift/static -lswiftCompatibility51 -lswiftCompatibility56 -lswiftCompatibilityConcurrency'
+# GoogleMobileAds is Swift-built but statically linked into an ObjC-only app:
+# the linker needs the Swift static compatibility libs. Their directory moved
+# across Xcode versions (usr/lib/swift/<platform> in 27, elsewhere in 26), so
+# locate the archive on the actual toolchain instead of hardcoding a path.
+SWIFT_COMPAT_DIR="$(dirname "$(find "$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift" \
+	-name 'libswiftCompatibility51.a' -print -quit 2>/dev/null)" 2>/dev/null || true)"
+if [[ -z "$SWIFT_COMPAT_DIR" || ! -d "$SWIFT_COMPAT_DIR" ]]; then
+	SWIFT_COMPAT_DIR="$(dirname "$(find "$(xcode-select -p)" \
+		-name 'libswiftCompatibility51.a' -print -quit 2>/dev/null)" 2>/dev/null || true)"
+fi
+# Xcode 26 keeps the Swift static libs in a cryptex mount, outside the app.
+if [[ -z "$SWIFT_COMPAT_DIR" || ! -f "$SWIFT_COMPAT_DIR/libswiftCompatibility51.a" ]]; then
+	SWIFT_COMPAT_DIR="$(dirname "$(find /var/run/com.apple.security.cryptexd \
+		-name 'libswiftCompatibility51.a' -print -quit 2>/dev/null)" 2>/dev/null || true)"
+fi
+if [[ -n "$SWIFT_COMPAT_DIR" && -f "$SWIFT_COMPAT_DIR/libswiftCompatibility51.a" ]]; then
+	echo "swift compat libs: $SWIFT_COMPAT_DIR"
+	IOS_EXTRA_LDFLAGS="\$(inherited) -L$SWIFT_COMPAT_DIR -lswiftCompatibility51 -lswiftCompatibility56 -lswiftCompatibilityConcurrency"
+else
+	echo "::warning::Swift static compatibility libs not found; relying on toolchain autolink"
+	IOS_EXTRA_LDFLAGS='$(inherited)'
+fi
 
 eval "$(python3 "$ROOT/tools/set_versions.py" get)"
 VERSION="${VERSION:-$version}"
