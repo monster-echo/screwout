@@ -115,10 +115,11 @@ def flood_remove_white_bg(img: Image.Image, thresh: int = 236, feather: float = 
 
 
 def hue_grade_red_master(im: Image.Image, target_h: float, sat_mul: float, val_mul: float,
-                         min_sat_to_shift: float = 0.22) -> Image.Image:
+                         min_sat_to_shift: float = 0.22, clean_specular: bool = False) -> Image.Image:
     """
     Shifts saturated red/crimson pixels to the target jewel-tone hue while keeping
     neutral white highlights, silver inner panels, and dark specular reflections pristine.
+    When clean_specular=True, removes residual pink tint from bright low-sat highlights.
     """
     src = im.convert("RGBA")
     w, h = src.size
@@ -134,17 +135,24 @@ def hue_grade_red_master(im: Image.Image, target_h: float, sat_mul: float, val_m
                 continue
             rf, gf, bf = r / 255.0, g / 255.0, b / 255.0
             hh, ss, vv = colorsys.rgb_to_hsv(rf, gf, bf)
-            # Only shift pixels that actually have red/warm saturation (preserve neutral whites/silvers)
-            if ss >= min_sat_to_shift:
-                # Smooth blend factor near threshold to prevent harsh edges
-                blend = min(1.0, (ss - min_sat_to_shift) / 0.18)
+            if clean_specular and ss < min_sat_to_shift and vv > 0.60:
+                # Pure crisp neutral white highlight (removes pinkish tint from red source specular!)
+                v2 = int(min(255, vv * 255))
+                opx[x, y] = (v2, v2, v2, a)
+            elif ss >= min_sat_to_shift:
+                blend = min(1.0, (ss - min_sat_to_shift) / 0.14)
                 new_s = min(1.0, ss * (1.0 - blend + blend * sat_mul))
                 new_v = min(1.0, vv * (1.0 - blend + blend * val_mul))
-                # Shift hue toward target_h
                 nr, ng, nb = colorsys.hsv_to_rgb(target_h, new_s, new_v)
-                r2 = int((rf * (1.0 - blend) + nr * blend) * 255)
-                g2 = int((gf * (1.0 - blend) + ng * blend) * 255)
-                b2 = int((bf * (1.0 - blend) + nb * blend) * 255)
+                if clean_specular:
+                    # Blend low-sat transition cleanly with pure white instead of source pink!
+                    r2 = int((vv * (1.0 - blend) + nr * blend) * 255)
+                    g2 = int((vv * (1.0 - blend) + ng * blend) * 255)
+                    b2 = int((vv * (1.0 - blend) + nb * blend) * 255)
+                else:
+                    r2 = int((rf * (1.0 - blend) + nr * blend) * 255)
+                    g2 = int((gf * (1.0 - blend) + ng * blend) * 255)
+                    b2 = int((bf * (1.0 - blend) + nb * blend) * 255)
                 opx[x, y] = (max(0, min(255, r2)), max(0, min(255, g2)), max(0, min(255, b2)), a)
             else:
                 opx[x, y] = (r, g, b, a)
@@ -187,18 +195,17 @@ def make_3d_screws():
     sq = Image.new("RGBA", (side, side), (0, 0, 0, 0))
     sq.paste(cut, ((side - cut.width) // 2, (side - cut.height) // 2), cut)
 
-    # Shrink inward by 4% on 4x supersampled circle mask to cut off 100% of JPEG fringe
+    # Shrink inward by 5% on 4x supersampled circle mask to cut off 100% of dark rim shadow & JPEG fringe
     master_hi = sq.resize((256, 256), Image.Resampling.LANCZOS)
     circ_mask_hi = Image.new("L", (512, 512), 0)
-    ImageDraw.Draw(circ_mask_hi).ellipse([20, 20, 492, 492], fill=255)
+    ImageDraw.Draw(circ_mask_hi).ellipse([26, 26, 486, 486], fill=255)
     circ_mask = circ_mask_hi.resize((256, 256), Image.Resampling.LANCZOS)
     master_hi.putalpha(circ_mask)
     master = master_hi.resize((116, 116), Image.Resampling.LANCZOS)
 
     for idx, (th, sm, vm) in COLOR_TARGETS.items():
-        graded = hue_grade_red_master(master, th, sm, vm, min_sat_to_shift=0.14)
-        # Bleed screw rim RGB into alpha==0 pixels so WebGL linear filtering NEVER produces dark grey fringe!
-        clean_screw = bleed_transparent_rgb(graded, passes=5)
+        graded = hue_grade_red_master(master, th, sm, vm, min_sat_to_shift=0.14, clean_specular=True)
+        clean_screw = bleed_transparent_rgb(graded, passes=6)
         clean_screw.save(os.path.join(GAMES_DIR, f"gbz_screw{idx}.png"))
 
     # Also build a crisp 3D metallic threaded screw shaft for the 3D unscrew animation!
@@ -340,50 +347,58 @@ def make_3d_boxes_and_lids():
 
 def make_glossy_acrylic_boards():
     """
-    Upgrades all 120 board fill & frame silhouettes with real translucent
-    beveled acrylic/crystal glass shading (crisp rim, diagonal sheen, soft depth).
+    Upgrades all 120 board fill & frame silhouettes using exact frameSprite vs boardSprite
+    classification from lv_0..lv_100.json.
+    - Frame sprites (clouds, shapes outer rims): pure crisp snow-white (255,255,255) with (255,255,255,0) bleed.
+    - Fill sprites: bright clean crystal tintable base with (255,255,255,0) bleed.
     """
+    import json, glob
+    frame_names = set()
+    for lp in glob.glob(os.path.join(ROOT, "assets/resources/levels/lv_*.json")):
+        with open(lp) as f:
+            lv = json.load(f)
+        for layer in lv.get("layers", []):
+            for b in layer.get("boards", []):
+                fn = b.get("frameSprite")
+                if fn:
+                    frame_names.add(fn)
+
     count = 0
     for fname in os.listdir(BOARDS_DIR):
         if not fname.endswith(".png"):
             continue
         fpath = os.path.join(BOARDS_DIR, fname)
+        stem = os.path.splitext(fname)[0]
         im = Image.open(fpath).convert("RGBA")
         w, h = im.size
         alpha = im.split()[3]
-        is_frame = ("_1." in fname) or ("frame" in fname.lower())
+        is_frame = stem in frame_names
 
         if is_frame:
-            # Ultra-clean pure white outer rim: fill alpha==0 pixels with (255,255,255,0)
-            # so WebGL GL_LINEAR interpolation NEVER produces dark grey fringe around clouds/boards!
+            # Pure crystal snow-white outer frame (zero bottom grey darkening, zero dark edge bleed!)
             out = Image.new("RGBA", (w, h), (255, 255, 255, 0))
             apx = alpha.load()
             opx = out.load()
             for y in range(h):
-                t = y / max(1, h - 1)
-                v = int(255 - 10 * t)
                 for x in range(w):
                     a = apx[x, y]
-                    if a < 16:
-                        opx[x, y] = (v, min(255, v + 1), 255, 0)
-                    else:
-                        opx[x, y] = (v, min(255, v + 1), 255, a)
+                    opx[x, y] = (255, 255, 255, 0 if a < 20 else a)
             out.save(fpath)
         else:
-            # Clean translucent glossy crystal slab: keep bright white-base RGB on alpha==0 pixels too!
+            # Clean bright translucent acrylic slab (tinted by Cocos Sprite.color)
             base = Image.new("RGBA", (w, h), (255, 255, 255, 255))
             bd = ImageDraw.Draw(base)
             for y in range(h):
                 t = y / max(1, h - 1)
-                lum = int(254 - 28 * t)
-                bd.line([(0, y), (w, y)], fill=(lum, lum, min(255, lum + 3), 255))
+                lum = int(255 - 16 * t)
+                bd.line([(0, y), (w, y)], fill=(lum, lum, 255, 255))
 
             sheen = Image.new("RGBA", (w, h), (0, 0, 0, 0))
             sd = ImageDraw.Draw(sheen)
             sd.polygon([
                 (int(w * 0.05), 0), (int(w * 0.36), 0),
                 (0, int(h * 0.40)), (0, int(h * 0.12))
-            ], fill=(255, 255, 255, 78))
+            ], fill=(255, 255, 255, 65))
             sheen = sheen.filter(ImageFilter.GaussianBlur(4))
             base.alpha_composite(sheen)
 
@@ -393,8 +408,7 @@ def make_glossy_acrylic_boards():
                 for x in range(w):
                     a = apx[x, y]
                     r, g, b, _ = bpx[x, y]
-                    # Preserve bright RGB even where alpha==0 -> 100% eliminates WebGL dark edge fringe!
-                    bpx[x, y] = (r, g, b, 0 if a < 14 else a)
+                    bpx[x, y] = (r, g, b, 0 if a < 18 else a)
             base.save(fpath)
         count += 1
     return count
