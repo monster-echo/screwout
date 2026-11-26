@@ -1,0 +1,9 @@
+{
+  "name": "screw-out",
+  "version": "1.0.0",
+  "description": "ScrewOut (拆螺丝) - Ported to Cocos Creator 3.8.6",
+  "creator": {
+    "version": "3.8.6"
+  },
+  "uuid": "7f3a9d21-5b84-4e12-9c6e-8a1b4f2d9038"
+}

@@ -1,0 +1,9 @@
+# Cocos Creator build & cache directories
+library/
+local/
+temp/
+build/
+profiles/
+.DS_Store
+node_modules/
+tools/autoplay_report.json

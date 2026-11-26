@@ -1,0 +1,21 @@
+{
+  "name": "screw-out",
+  "platform": "web-mobile",
+  "buildPath": "project://build",
+  "debug": true,
+  "md5Cache": false,
+  "sourceMaps": false,
+  "scenes": [
+    {
+      "url": "db://assets/scenes/Main.scene",
+      "uuid": "a9c12e40-8b14-4d62-9f31-10a8b7c4d201"
+    }
+  ],
+  "startScene": "a9c12e40-8b14-4d62-9f31-10a8b7c4d201",
+  "packages": {
+    "web-mobile": {
+      "orientation": "portrait",
+      "useWebGPU": false
+    }
+  }
+}
