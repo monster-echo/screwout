@@ -224,6 +224,15 @@ target '$SCHEME' do
 end
 PODFILE
 fi
+# CocoaPods <1.16 mis-generates UMP's resource-bundle phase on Xcode 26
+# ("Build input file cannot be found: UserMessagingPlatformResources"); the
+# brew build is 1.16+. Only switch when the preinstalled pod is too old.
+if [[ "$(pod --version 2>/dev/null | head -1 | cut -d. -f1)" -lt 1 \
+		|| "$(pod --version 2>/dev/null | head -1 | cut -d. -f2)" -lt 16 ]] 2>/dev/null; then
+	HOMEBREW_NO_AUTO_UPDATE=1 brew install cocoapods >/dev/null 2>&1 || true
+	hash -r
+fi
+echo "pod version: $(pod --version)"
 (cd "$PROJ_DIR" && pod install --repo-update)
 WORKSPACE="$(find -L "$PROJ_DIR" -maxdepth 1 -name '*.xcworkspace' -print -quit)"
 if [[ -z "$WORKSPACE" ]]; then

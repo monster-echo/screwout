@@ -166,6 +166,10 @@ fi
 
 echo "== AdMob + bridge integration"
 # 1. Copy the bridge (package com.screwout.ads) into the generated app module.
+#    Any stale copy elsewhere under app/src (e.g. src/com/screwout/ads) would
+#    compile twice as the same class — purge it first.
+find "$NATIVE_DIR/app/src" -path '*com/screwout/ads*' -type d \
+    ! -path '*/src/main/java/com/screwout/ads*' -exec rm -rf {} + 2>/dev/null || true
 JAVA_DIR="$NATIVE_DIR/app/src/main/java/com/screwout/ads"
 mkdir -p "$JAVA_DIR"
 cp "$ROOT/native/android/admob/AdMobBridge.java" "$JAVA_DIR/"
