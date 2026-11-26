@@ -151,6 +151,34 @@ def hue_grade_red_master(im: Image.Image, target_h: float, sat_mul: float, val_m
     return out
 
 
+def bleed_transparent_rgb(im: Image.Image, passes: int = 4) -> Image.Image:
+    """
+    Eliminates WebGL GL_LINEAR dark-fringe halos on straight-alpha PNGs by
+    dilating nearest opaque edge RGB colors into adjacent alpha==0 pixels
+    (keeping alpha strictly 0).
+    """
+    out = im.convert("RGBA")
+    w, h = out.size
+    px = out.load()
+    for _ in range(passes):
+        updates = []
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = px[x, y]
+                if a == 0 and r == 0 and g == 0 and b == 0:
+                    sr = sg = sb = cnt = 0
+                    for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                        if 0 <= nx < w and 0 <= ny < h:
+                            nr, ng, nb, na = px[nx, ny]
+                            if na > 0 or (nr > 0 or ng > 0 or nb > 0):
+                                sr += nr; sg += ng; sb += nb; cnt += 1
+                    if cnt > 0:
+                        updates.append((x, y, sr // cnt, sg // cnt, sb // cnt))
+        for x, y, r, g, b in updates:
+            px[x, y] = (r, g, b, 0)
+    return out
+
+
 def make_3d_screws():
     raw = Image.open(SRC_SCREW_RED)
     # Remove white background first to find exact circle bounding box
@@ -159,26 +187,19 @@ def make_3d_screws():
     sq = Image.new("RGBA", (side, side), (0, 0, 0, 0))
     sq.paste(cut, ((side - cut.width) // 2, (side - cut.height) // 2), cut)
 
-    # Apply mathematically perfect 4x-supersampled circular alpha mask shrunk inward by 2.5%
-    # This eliminates 100% of JPEG off-white edge halo / dirty fringe!
+    # Shrink inward by 4% on 4x supersampled circle mask to cut off 100% of JPEG fringe
     master_hi = sq.resize((256, 256), Image.Resampling.LANCZOS)
     circ_mask_hi = Image.new("L", (512, 512), 0)
-    ImageDraw.Draw(circ_mask_hi).ellipse([12, 12, 500, 500], fill=255)
+    ImageDraw.Draw(circ_mask_hi).ellipse([20, 20, 492, 492], fill=255)
     circ_mask = circ_mask_hi.resize((256, 256), Image.Resampling.LANCZOS)
     master_hi.putalpha(circ_mask)
-    master = master_hi.resize((128, 128), Image.Resampling.LANCZOS)
+    master = master_hi.resize((116, 116), Image.Resampling.LANCZOS)
 
-    # Apply tiny soft contact shadow behind each screw for depth on acrylic boards
     for idx, (th, sm, vm) in COLOR_TARGETS.items():
         graded = hue_grade_red_master(master, th, sm, vm, min_sat_to_shift=0.14)
-        canvas = Image.new("RGBA", (116, 116), (0, 0, 0, 0))
-        scaled = graded.resize((104, 104), Image.Resampling.LANCZOS)
-        sh = Image.new("RGBA", (116, 116), (0, 0, 0, 0))
-        ImageDraw.Draw(sh).ellipse([9, 11, 107, 109], fill=(15, 23, 42, 68))
-        sh = sh.filter(ImageFilter.GaussianBlur(2.8))
-        canvas.alpha_composite(sh)
-        canvas.alpha_composite(scaled, (6, 4))
-        canvas.save(os.path.join(GAMES_DIR, f"gbz_screw{idx}.png"))
+        # Bleed screw rim RGB into alpha==0 pixels so WebGL linear filtering NEVER produces dark grey fringe!
+        clean_screw = bleed_transparent_rgb(graded, passes=5)
+        clean_screw.save(os.path.join(GAMES_DIR, f"gbz_screw{idx}.png"))
 
     # Also build a crisp 3D metallic threaded screw shaft for the 3D unscrew animation!
     shaft = Image.new("RGBA", (44, 110), (0, 0, 0, 0))
@@ -333,31 +354,30 @@ def make_glossy_acrylic_boards():
         is_frame = ("_1." in fname) or ("frame" in fname.lower())
 
         if is_frame:
-            # Ultra-clean pure white glossy outer rim (zero grey/dirty edge pixels!)
-            out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            # Ultra-clean pure white outer rim: fill alpha==0 pixels with (255,255,255,0)
+            # so WebGL GL_LINEAR interpolation NEVER produces dark grey fringe around clouds/boards!
+            out = Image.new("RGBA", (w, h), (255, 255, 255, 0))
             apx = alpha.load()
             opx = out.load()
             for y in range(h):
                 t = y / max(1, h - 1)
-                v = int(255 - 12 * t)
+                v = int(255 - 10 * t)
                 for x in range(w):
                     a = apx[x, y]
-                    # Zero out tiny stray semi-transparent noise pixels (<16) that cause dirty halos
                     if a < 16:
-                        opx[x, y] = (0, 0, 0, 0)
+                        opx[x, y] = (v, min(255, v + 1), 255, 0)
                     else:
-                        opx[x, y] = (v, min(255, v + 2), 255, a)
+                        opx[x, y] = (v, min(255, v + 1), 255, a)
             out.save(fpath)
         else:
-            # Clean translucent glossy crystal slab (tinted at runtime by Cocos Sprite.color)
+            # Clean translucent glossy crystal slab: keep bright white-base RGB on alpha==0 pixels too!
             base = Image.new("RGBA", (w, h), (255, 255, 255, 255))
             bd = ImageDraw.Draw(base)
             for y in range(h):
                 t = y / max(1, h - 1)
-                lum = int(254 - 30 * t)
+                lum = int(254 - 28 * t)
                 bd.line([(0, y), (w, y)], fill=(lum, lum, min(255, lum + 3), 255))
 
-            # Subtle diagonal soft glass reflection streak
             sheen = Image.new("RGBA", (w, h), (0, 0, 0, 0))
             sd = ImageDraw.Draw(sheen)
             sd.polygon([
@@ -367,17 +387,14 @@ def make_glossy_acrylic_boards():
             sheen = sheen.filter(ImageFilter.GaussianBlur(4))
             base.alpha_composite(sheen)
 
-            # Apply exact clean original alpha (zero blocky MinFilter halo, zero stray dirt!)
             apx = alpha.load()
             bpx = base.load()
             for y in range(h):
                 for x in range(w):
                     a = apx[x, y]
-                    if a < 14:
-                        bpx[x, y] = (0, 0, 0, 0)
-                    else:
-                        r, g, b, _ = bpx[x, y]
-                        bpx[x, y] = (r, g, b, a)
+                    r, g, b, _ = bpx[x, y]
+                    # Preserve bright RGB even where alpha==0 -> 100% eliminates WebGL dark edge fringe!
+                    bpx[x, y] = (r, g, b, 0 if a < 14 else a)
             base.save(fpath)
         count += 1
     return count
