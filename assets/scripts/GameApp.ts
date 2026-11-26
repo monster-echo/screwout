@@ -4,7 +4,6 @@ import { DataManager } from './core/DataManager';
 import { AudioManager } from './core/AudioManager';
 import { ResManager } from './core/ResManager';
 import { MonetizationManager } from './core/MonetizationManager';
-import { DailyAndLeaderboardService } from './meta/DailyAndLeaderboard';
 import { LevelController } from './game/LevelController';
 import { UIManager } from './ui/UIManager';
 
@@ -22,7 +21,6 @@ export class GameApp extends Component {
             AudioManager.ins.loadAll(),
         ]);
 
-        // Ensure AppRoot fills full visible screen (no black bars on tall phones)
         const rootUi = this.node.getComponent(UITransform) || this.node.addComponent(UITransform);
         rootUi.setContentSize(750, 1334);
         const rootW = this.node.getComponent(Widget) || this.node.addComponent(Widget);
@@ -30,7 +28,7 @@ export class GameApp extends Component {
         rootW.top = rootW.bottom = rootW.left = rootW.right = 0;
         rootW.updateAlignment();
 
-        // 1. Original low-poly sky-blue in-game background (full-bleed Widget)
+        // 1. Studio playfield background
         const bgNode = new Node('Backdrop');
         bgNode.setParent(this.node);
         const bgUi = bgNode.addComponent(UITransform);
@@ -50,7 +48,7 @@ export class GameApp extends Component {
             g.fill();
         }
 
-        // 2. Top frosted white header deck (pinned to top edge via Widget)
+        // 2. Top white header deck
         const topPanel = new Node('root_bg');
         topPanel.setParent(this.node);
         const tpUi = topPanel.addComponent(UITransform);
@@ -74,7 +72,7 @@ export class GameApp extends Component {
             g.fill();
         }
 
-        // 3. Stage / LevelController node
+        // 3. Stage / LevelController
         const stageNode = new Node('Stage');
         stageNode.setParent(this.node);
         this._levelCtrl = stageNode.addComponent(LevelController);
@@ -88,49 +86,25 @@ export class GameApp extends Component {
             getCollectBoxNode: () => this._uiMgr?.collectBoxNode || null,
         });
 
-        // 4. UI Layer
+        // 4. Clean Original UI + Rewarded Ads
         const uiNode = new Node('UI');
         uiNode.setParent(this.node);
         this._uiMgr = uiNode.addComponent(UIManager);
         MonetizationManager.ins.setToastCallback((m) => this._uiMgr?.showToast(m));
 
         this._uiMgr.build({
-            onStartGame: (lv) => this.startLevel(lv, false),
-            onStartDaily: () => {
-                const dateKey = DailyAndLeaderboardService.getTodayDateKey();
-                const dailyLv = DailyAndLeaderboardService.getDailyLevelNumber(dateKey);
-                this.startLevel(dailyLv, true, dateKey);
-            },
+            onStartGame: (lv) => this.startLevel(lv),
             onRestart: () => {
-                if (DataManager.ins.isDailyMode) {
-                    const dateKey = DataManager.ins.activeDailyDateKey || DailyAndLeaderboardService.getTodayDateKey();
-                    const dailyLv = DailyAndLeaderboardService.getDailyLevelNumber(dateKey);
-                    this.startLevel(dailyLv, true, dateKey);
-                } else {
-                    this.startLevel(DataManager.ins.level, false);
-                }
-            },
-            onGiveUp: () => {
-                DataManager.ins.resetWinStreak();
                 MonetizationManager.ins.maybeShowInterstitial('level_retry');
-                if (DataManager.ins.isDailyMode) {
-                    this.backToMenu();
-                } else {
-                    this.startLevel(DataManager.ins.level, false);
-                }
+                this.startLevel(DataManager.ins.level);
             },
             onBackMenu: () => this.backToMenu(),
             onNextLevel: () => {
                 MonetizationManager.ins.maybeShowInterstitial('level_win');
-                if (DataManager.ins.isDailyMode) {
-                    this.backToMenu();
-                } else {
-                    DataManager.ins.advanceLevel();
-                    this.startLevel(DataManager.ins.level, false);
-                }
+                DataManager.ins.advanceLevel();
+                this.startLevel(DataManager.ins.level);
             },
             onRevive: () => {
-                MonetizationManager.ins.trackEvent('streak_saved', { streak: DataManager.ins.winStreak });
                 this._levelCtrl?.revive();
             },
             onUseSkill: (skill: SkillType) => {
@@ -138,22 +112,19 @@ export class GameApp extends Component {
             },
         });
 
-        // Expose read-only state & level switcher for automated browser testing
         (globalThis as any).__SCREW_OUT__ = {
             ready: true,
-            startLevel: (lv: number) => this.startLevel(lv, false),
+            startLevel: (lv: number) => this.startLevel(lv),
             getBestMove: () => this._levelCtrl?.getBestLegalScrewNormalized() || null,
             getState: () => this._levelCtrl?.getDebugState() || { status: DataManager.ins.status },
         };
     }
 
-    private async startLevel(levelNumber: number, isDaily: boolean, dailyDateKey = ''): Promise<void> {
-        if (!isDaily) {
-            DataManager.ins.level = levelNumber;
-            DataManager.ins.save();
-        }
-        this._uiMgr?.showGameHUD(isDaily, levelNumber);
-        await this._levelCtrl?.startLevel(levelNumber, isDaily, dailyDateKey);
+    private async startLevel(levelNumber: number): Promise<void> {
+        DataManager.ins.level = levelNumber;
+        DataManager.ins.save();
+        this._uiMgr?.showGameHUD(levelNumber);
+        await this._levelCtrl?.startLevel(levelNumber);
     }
 
     private backToMenu(): void {

@@ -14,21 +14,18 @@ import {
     Widget,
 } from 'cc';
 import { AudioClips, SkillType } from '../core/GameTypes';
-import { DataManager, ECONOMY } from '../core/DataManager';
+import { DataManager } from '../core/DataManager';
 import { AudioManager } from '../core/AudioManager';
 import { ResManager } from '../core/ResManager';
-import { IAP_CATALOG, MonetizationManager } from '../core/MonetizationManager';
+import { MonetizationManager } from '../core/MonetizationManager';
 import { PIXEL_GALLERY, PixelArtDef, PixelGalleryService } from '../meta/PixelGalleryData';
-import { DailyAndLeaderboardService } from '../meta/DailyAndLeaderboard';
 import { createButton, createLabel, createPanel } from './UIHelper';
 
 const { ccclass } = _decorator;
 
 export interface UIActions {
     onStartGame: (level: number) => void;
-    onStartDaily: () => void;
     onRestart: () => void;
-    onGiveUp: () => void;
     onBackMenu: () => void;
     onNextLevel: () => void;
     onRevive: () => void;
@@ -39,11 +36,9 @@ export interface UIActions {
 export class UIManager extends Component {
     private _actions: UIActions | null = null;
 
-    // In-game HUD
+    // In-game HUD (original GbzMainLayer)
     private _hudNode: Node | null = null;
     private _levelLabel: Label | null = null;
-    private _hudStreakNode: Node | null = null;
-    private _hudStreakLbl: Label | null = null;
     private _progressLabel: Label | null = null;
     private _collectBoxNode: Node | null = null;
     private _smashBanner: Node | null = null;
@@ -54,57 +49,27 @@ export class UIManager extends Component {
         return this._collectBoxNode;
     }
 
-    // Home Menu
+    // Home Menu (faithful to original GbzMenuLayer)
     private _menuNode: Node | null = null;
-    private _coinsLbl: Label | null = null;
-    private _boltsLbl: Label | null = null;
-    private _menuStreakLbl: Label | null = null;
     private _pixelCanvasNode: Node | null = null;
-    private _lastPixelArtId = '';
-    private _lastPixelFilled = 0;
-    private _menuArtTitleLbl: Label | null = null;
     private _menuProgressFill: Node | null = null;
     private _menuProgressLbl: Label | null = null;
-    private _buildBtnLbl: Label | null = null;
     private _playBtnLbl: Label | null = null;
-    private _playSubLbl: Label | null = null;
-    private _dailyBadgeLbl: Label | null = null;
-    private _rankBadgeLbl: Label | null = null;
-    private _galleryBadgeLbl: Label | null = null;
 
     // Popups
     private _pauseNode: Node | null = null;
     private _winNode: Node | null = null;
     private _winTitleLbl: Label | null = null;
-    private _winRewardLbl: Label | null = null;
-    private _winStreakLbl: Label | null = null;
-    private _winDoubleBtn: Node | null = null;
-    private _winNextLbl: Label | null = null;
-    private _winDoubled = false;
+    private _winArtCanvas: Node | null = null;
+    private _winProgFill: Node | null = null;
+    private _winProgLbl: Label | null = null;
+    private _winStatusLbl: Label | null = null;
 
     private _loseNode: Node | null = null;
-    private _loseStreakBanner: Node | null = null;
-    private _loseStreakLbl: Label | null = null;
-    private _loseReviveAdLbl: Label | null = null;
-    private _loseGiveUpLbl: Label | null = null;
-
     private _settingsNode: Node | null = null;
     private _soundBtnLbl: Label | null = null;
-    private _countryBtnLbl: Label | null = null;
-    private _noAdsStatusLbl: Label | null = null;
-
     private _galleryNode: Node | null = null;
     private _galleryListRoot: Node | null = null;
-
-    private _leaderboardNode: Node | null = null;
-    private _lbTab: 'countries' | 'global' = 'countries';
-    private _lbListRoot: Node | null = null;
-    private _lbCountryTabBtn: Node | null = null;
-    private _lbGlobalTabBtn: Node | null = null;
-    private _lbMyCountryLbl: Label | null = null;
-
-    private _shopNode: Node | null = null;
-    private _shopListRoot: Node | null = null;
 
     // Toast
     private _toastNode: Node | null = null;
@@ -125,12 +90,10 @@ export class UIManager extends Component {
         this.buildHUD();
         this.buildMenu();
         this.buildPausePopup();
-        this.buildWinPopup();
+        this.buildWinPaintPopup();
         this.buildLosePopup();
         this.buildSettingsPopup();
         this.buildGalleryModal();
-        this.buildLeaderboardModal();
-        this.buildShopModal();
         this.buildToast();
 
         this.showMenu();
@@ -144,9 +107,7 @@ export class UIManager extends Component {
         const sp = node.addComponent(Sprite);
         sp.sizeMode = Sprite.SizeMode.CUSTOM;
         const sf = ResManager.ins.getUiSprite(spriteName) || ResManager.ins.getGameSprite(spriteName);
-        if (sf) {
-            sp.spriteFrame = sf;
-        }
+        if (sf) sp.spriteFrame = sf;
         return node;
     }
 
@@ -202,16 +163,7 @@ export class UIManager extends Component {
         lW.top = 34;
         this._levelLabel = createLabel('lv_label', lvPill, 'LEVEL 1', 25, '#ffffff', 220, 38);
 
-        // Top-right Win Streak pill
-        this._hudStreakNode = createPanel('hud_streak', this._hudNode, 146, 44, '#f97316', 245, 22);
-        const hsW = this._hudStreakNode.addComponent(Widget);
-        hsW.isAlignTop = true;
-        hsW.isAlignRight = true;
-        hsW.top = 35;
-        hsW.right = 20;
-        this._hudStreakLbl = createLabel('hs_lbl', this._hudStreakNode, 'STREAK x0', 20, '#ffffff', 136, 32);
-
-        // Right-side craft crate progress indicator
+        // Right-side 3D shipping crate progress
         const boxProg = new Node('c_item');
         boxProg.setParent(this._hudNode);
         const bpUi = boxProg.addComponent(UITransform);
@@ -233,7 +185,7 @@ export class UIManager extends Component {
         createLabel('SmashTxt', this._smashBanner, 'Tap any board to melt it!', 24, '#ffffff', 420, 40);
         this._smashBanner.active = false;
 
-        // Bottom 3 original 3D skill buttons (1:1 aspect ratio, zero distortion)
+        // Bottom 3 pearl-ivory 3D ceramic skill buttons (+1 SLOT / CLEAR / MELT)
         const skillBar = new Node('skills');
         skillBar.setParent(this._hudNode);
         const sbUi = skillBar.addComponent(UITransform);
@@ -273,7 +225,7 @@ export class UIManager extends Component {
             badge.setPosition(116, 84, 0);
             const badgeSp = badge.getComponent(Sprite);
             if (badgeSp) this._skillBadgeSprites.set(cfg.type, badgeSp);
-            const countLbl = createLabel('cnt', badge, '2', 32, '#ffffff', 72, 42);
+            const countLbl = createLabel('cnt', badge, '1', 32, '#ffffff', 72, 42);
             countLbl.isBold = true;
             countLbl.node.setPosition(0, 2, 0);
             this._skillBadgeLabels.set(cfg.type, countLbl);
@@ -285,7 +237,7 @@ export class UIManager extends Component {
         }
     }
 
-    // ==================== Overseas Commercial Home Menu ====================
+    // ==================== Faithful Clean Original Home Menu ====================
 
     private buildMenu(): void {
         this._menuNode = new Node('GbzMenuLayer');
@@ -302,130 +254,65 @@ export class UIManager extends Component {
         bgW.isAlignTop = bgW.isAlignBottom = bgW.isAlignLeft = bgW.isAlignRight = true;
         bgW.top = bgW.bottom = bgW.left = bgW.right = 0;
 
-        // Top Bar Container (pinned to top)
-        const topBar = new Node('top_bar');
-        topBar.setParent(this._menuNode);
-        const tbUi = topBar.addComponent(UITransform);
-        tbUi.setContentSize(710, 90);
-        const tbW = topBar.addComponent(Widget);
-        tbW.isAlignTop = true;
-        tbW.isAlignHorizontalCenter = true;
-        tbW.top = 24;
-
-        // Settings gear (left)
-        const setBtn = this.makeSpriteFit('btn_setting', topBar, 'UI_icon_setting', 76, 76);
-        setBtn.setPosition(-310, 0, 0);
+        // Top-left Settings gear (just like original!)
+        const setBtn = this.makeSpriteFit('btn_setting', this._menuNode, 'UI_icon_setting', 82, 82);
+        const setW = setBtn.addComponent(Widget);
+        setW.isAlignTop = true;
+        setW.isAlignLeft = true;
+        setW.top = 26;
+        setW.left = 24;
         this.bindTap(setBtn, () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             this.openSettings();
         });
 
-        // Coins Pill with real 3D coin icon
-        const coinPill = createPanel('coin_pill', topBar, 166, 52, '#0f172a', 200, 26);
-        coinPill.setPosition(-172, 0, 0);
-        const coinIco = this.makeSpriteFit('c_ico', coinPill, 'flyGold', 42, 42);
-        coinIco.setPosition(-56, 0, 0);
-        this._coinsLbl = createLabel('coins_lbl', coinPill, '120', 25, '#fde047', 102, 36);
-        this._coinsLbl.node.setPosition(16, 0, 0);
-        this.bindTap(coinPill, () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            this.openShop();
-        });
+        // 3D Logo
+        const logo = this.makeSpriteFit('game_logo', this._menuNode, 'logo_screw_jam', 460, 108);
+        logo.setPosition(0, 476, 0);
 
-        // Bolts Pill with real 3D blue screw icon
-        const boltPill = createPanel('bolt_pill', topBar, 152, 52, '#0f172a', 200, 26);
-        boltPill.setPosition(-4, 0, 0);
-        const boltIco = this.makeSpriteFit('b_ico', boltPill, 'gbz_screw4', 40, 40);
-        boltIco.setPosition(-48, 0, 0);
-        this._boltsLbl = createLabel('bolts_lbl', boltPill, '20', 25, '#38bdf8', 90, 36);
-        this._boltsLbl.node.setPosition(18, 0, 0);
-
-        // Win Streak Flame Pill
-        const streakPill = createPanel('streak_pill', topBar, 134, 52, '#ea580c', 235, 26);
-        streakPill.setPosition(148, 0, 0);
-        this._menuStreakLbl = createLabel('streak_lbl', streakPill, 'x0 WIN', 22, '#ffffff', 120, 34);
-
-        // Shop Button (right)
-        const shopBtn = createButton('btn_shop', topBar, 'SHOP', 108, 52, '#22c55e', () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            this.openShop();
-        }, 22, '#ffffff', 22);
-        shopBtn.setPosition(286, 0, 0);
-
-        // 3D Extruded Golden Game Logo (replaces plain black text!)
-        const logo = this.makeSpriteFit('game_logo', this._menuNode, 'logo_screw_jam', 460, 106);
-        logo.setPosition(0, 488, 0);
-
-        // Hero Centerpiece: Large 3D Oak Wooden Frame showing live Pixel Art Mosaic
-        const woodFrame = this.makeSpriteNode('wood_frame', this._menuNode, 'wood_frame', 490, 490);
-        woodFrame.setPosition(0, 184, 0);
+        // Hero Centerpiece: Large 3D Oak Wooden Frame showing live Pixel Art progress
+        const woodFrame = this.makeSpriteNode('wood_frame', this._menuNode, 'wood_frame', 524, 524);
+        woodFrame.setPosition(0, 140, 0);
 
         this._pixelCanvasNode = new Node('pixel_canvas');
         this._pixelCanvasNode.setParent(woodFrame);
         this._pixelCanvasNode.setPosition(0, 0, 0);
 
-        // Clean Progress Bar + Compact BUILD Pill right below wooden frame
-        this._menuArtTitleLbl = createLabel('art_title', this._menuNode, 'Lucky Cat', 24, '#0f172a', 420, 32);
-        this._menuArtTitleLbl.node.setPosition(0, -84, 0);
-
-        const barTrack = this.makeSpriteNode('jdt_track', this._menuNode, 'UI_jdt_1', 320, 42);
-        barTrack.setPosition(-88, -134, 0);
-        this._menuProgressFill = this.makeSpriteNode('jdt_fill', barTrack, 'UI_jdt_2', 320, 42);
+        // Clean original yellow progress bar right below wooden frame ("Completion: 33%")
+        const barTrack = this.makeSpriteNode('jdt_track', this._menuNode, 'UI_jdt_1', 490, 44);
+        barTrack.setPosition(0, -162, 0);
+        this._menuProgressFill = this.makeSpriteNode('jdt_fill', barTrack, 'UI_jdt_2', 490, 44);
         this._menuProgressFill.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
-        this._menuProgressFill.setPosition(-160, 0, 0);
-        this._menuProgressLbl = createLabel('jdt_lbl', barTrack, '0 / 60', 22, '#ffffff', 260, 34);
+        this._menuProgressFill.setPosition(-245, 0, 0);
+        this._menuProgressLbl = createLabel('jdt_lbl', barTrack, 'Completion: 0%', 24, '#ffffff', 380, 36);
+        this._menuProgressLbl.isBold = true;
 
-        const buildBtn = createButton('btn_build', this._menuNode, 'BUILD +5', 164, 52, '#f59e0b', () => {
-            this.onBuildActiveArt();
-        }, 23, '#ffffff', 24);
-        buildBtn.setPosition(168, -134, 0);
-        this._buildBtnLbl = buildBtn.getChildByName('Label')?.getComponent(Label) || null;
+        // Bottom Row (matching original clean layout: My Artworks on left + big PLAY CTA center-right)
+        const bottomRow = new Node('bottom_row');
+        bottomRow.setParent(this._menuNode);
+        const brUi = bottomRow.addComponent(UITransform);
+        brUi.setContentSize(690, 146);
+        const brW = bottomRow.addComponent(Widget);
+        brW.isAlignBottom = true;
+        brW.isAlignHorizontalCenter = true;
+        brW.bottom = 96;
 
-        // 3 Glossy 3D Squircle Feature Icon Buttons (Gallery | Daily | Ranking)
-        const dock = new Node('meta_dock');
-        dock.setParent(this._menuNode);
-        dock.setPosition(0, -264, 0);
-
-        // Icon 1: Gallery
-        const galBtn = this.makeSpriteNode('card_gallery', dock, 'icon_menu_gallery', 152, 140);
-        galBtn.setPosition(-196, 0, 0);
-        createLabel('g_t', galBtn, 'GALLERY', 22, '#ffffff', 140, 28).node.setPosition(0, -44, 0);
-        this._galleryBadgeLbl = createLabel('g_b', galBtn, '0 / 6 Done', 19, '#1e293b', 160, 26);
-        this._galleryBadgeLbl.node.setPosition(0, -88, 0);
+        // Left: My Artworks Gallery button (original 我的作品)
+        const galBtn = this.makeSpriteNode('btn_gallery', bottomRow, 'icon_menu_gallery', 132, 124);
+        galBtn.setPosition(-256, 4, 0);
+        const galLbl = createLabel('g_lbl', galBtn, 'MY ART', 20, '#ffffff', 120, 26);
+        galLbl.isBold = true;
+        galLbl.node.setPosition(0, -40, 0);
         this.bindTap(galBtn, () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             this.openGallery();
         });
 
-        // Icon 2: Daily Challenge
-        const dailyBtn = this.makeSpriteNode('card_daily', dock, 'icon_menu_daily', 152, 140);
-        dailyBtn.setPosition(0, 0, 0);
-        createLabel('d_t', dailyBtn, 'DAILY', 22, '#ffffff', 140, 28).node.setPosition(0, -44, 0);
-        this._dailyBadgeLbl = createLabel('d_b', dailyBtn, '+100C +20B', 19, '#c2410c', 160, 26);
-        this._dailyBadgeLbl.node.setPosition(0, -88, 0);
-        this.bindTap(dailyBtn, () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            this._actions?.onStartDaily();
-        });
-
-        // Icon 3: Country & Global Ranking
-        const rankBtn = this.makeSpriteNode('card_rank', dock, 'icon_menu_rank', 152, 140);
-        rankBtn.setPosition(196, 0, 0);
-        createLabel('r_t', rankBtn, 'RANKING', 22, '#ffffff', 140, 28).node.setPosition(0, -44, 0);
-        this._rankBadgeLbl = createLabel('r_b', rankBtn, 'US · 0 pts', 19, '#1e293b', 160, 26);
-        this._rankBadgeLbl.node.setPosition(0, -88, 0);
-        this.bindTap(rankBtn, () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            this.openLeaderboard();
-        });
-
-        // Bottom Hero PLAY CTA Button (pinned cleanly with breathing idle pulse!)
-        const startBtn = this.makeSpriteNode('btn_start', this._menuNode, '按键1', 430, 128);
-        const sW = startBtn.addComponent(Widget);
-        sW.isAlignBottom = true;
-        sW.isAlignHorizontalCenter = true;
-        sW.bottom = 78;
+        // Center-Right: Big glossy PLAY button
+        const startBtn = this.makeSpriteNode('btn_start', bottomRow, '按键1', 420, 126);
+        startBtn.setPosition(62, 0, 0);
         this._playBtnLbl = createLabel('start_lbl', startBtn, 'PLAY · LEVEL 1', 38, '#ffffff', 380, 56);
+        this._playBtnLbl.isBold = true;
         this._playBtnLbl.node.setPosition(0, 6, 0);
         this.bindTap(startBtn, () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
@@ -438,64 +325,33 @@ export class UIManager extends Component {
                     .to(0.85, { scale: Vec3.ONE }, { easing: 'sineInOut' }),
             )
             .start();
-
-        this._playSubLbl = createLabel('play_sub', this._menuNode, 'Win Streak x1+: Start with Bonus Slot!', 20, '#0f172a', 600, 32);
-        const psW = this._playSubLbl.node.addComponent(Widget);
-        psW.isAlignBottom = true;
-        psW.isAlignHorizontalCenter = true;
-        psW.bottom = 32;
     }
 
-    private renderActivePixelArt(): void {
-        if (!this._pixelCanvasNode) return;
-        this._pixelCanvasNode.removeAllChildren();
-
-        const art: PixelArtDef = PixelGalleryService.getActiveArt();
-        const filled = PixelGalleryService.getFilledCount(art.id);
-        const total = art.cells.length;
-        const grid = art.gridSize;
-        const cellStep = 38;
-        const half = ((grid - 1) * cellStep) / 2;
-
-        // Subtle wooden pegboard backdrop grid
-        const bgG = this._pixelCanvasNode.addComponent(Graphics) || this._pixelCanvasNode.getComponent(Graphics);
-        if (bgG) {
-            bgG.clear();
-            bgG.fillColor = new Color(241, 245, 249, 255);
-            bgG.roundRect(-186, -186, 372, 372, 22);
-            bgG.fill();
-        }
-
-        const isSameArt = this._lastPixelArtId === art.id;
-        const prevFilled = isSameArt ? this._lastPixelFilled : filled;
-        this._lastPixelArtId = art.id;
-        this._lastPixelFilled = filled;
+    /** Render a pixel art mosaic into any canvas node at given cellStep & screwSize */
+    private drawPixelArtStatic(canvasNode: Node, art: PixelArtDef, filledCount: number, cellStep: number, screwSize: number): void {
+        canvasNode.removeAllChildren();
+        const half = ((art.gridSize - 1) * cellStep) / 2;
+        const pad = Math.round(half + cellStep * 0.85);
+        const bgG = canvasNode.getComponent(Graphics) || canvasNode.addComponent(Graphics);
+        bgG.clear();
+        bgG.fillColor = new Color(241, 245, 249, 255);
+        bgG.roundRect(-pad, -pad, pad * 2, pad * 2, 20);
+        bgG.fill();
 
         const holeSf = ResManager.ins.getGameSprite('hole');
-        for (let i = 0; i < total; i++) {
+        for (let i = 0; i < art.cells.length; i++) {
             const cell = art.cells[i];
             const x = cell.col * cellStep - half;
             const y = half - cell.row * cellStep;
-
-            if (i < filled) {
-                const s = this.makeSpriteNode(`px_${i}`, this._pixelCanvasNode, `gbz_screw${cell.colorId}`, 35, 35);
+            if (i < filledCount) {
+                const s = this.makeSpriteNode(`px_${i}`, canvasNode, `gbz_screw${cell.colorId}`, screwSize, screwSize);
                 s.setPosition(x, y, 0);
-                // Elastic staggered pop-in for newly placed bolts!
-                if (i >= prevFilled) {
-                    const delay = (i - prevFilled) * 0.06;
-                    s.setScale(Vec3.ZERO);
-                    tween(s)
-                        .delay(delay)
-                        .to(0.24, { scale: new Vec3(1.18, 1.18, 1), angle: 360 }, { easing: 'backOut' })
-                        .to(0.09, { scale: Vec3.ONE })
-                        .start();
-                }
             } else {
                 const h = new Node(`empty_${i}`);
-                h.setParent(this._pixelCanvasNode);
+                h.setParent(canvasNode);
                 h.setPosition(x, y, 0);
                 const ui = h.addComponent(UITransform);
-                ui.setContentSize(24, 24);
+                ui.setContentSize(Math.round(screwSize * 0.65), Math.round(screwSize * 0.65));
                 const sp = h.addComponent(Sprite);
                 sp.sizeMode = Sprite.SizeMode.CUSTOM;
                 if (holeSf) sp.spriteFrame = holeSf;
@@ -503,59 +359,131 @@ export class UIManager extends Component {
                 op.opacity = 110;
             }
         }
+    }
 
-        if (this._menuArtTitleLbl) {
-            this._menuArtTitleLbl.string = `${art.title}  (${art.theme})`;
-        }
+    private renderHomePixelArt(): void {
+        if (!this._pixelCanvasNode) return;
+        const art = PixelGalleryService.getActiveArt();
+        const filled = PixelGalleryService.getFilledCount(art.id);
+        const total = art.cells.length;
+        const pct = Math.round((filled / Math.max(1, total)) * 100);
+
+        this.drawPixelArtStatic(this._pixelCanvasNode, art, filled, 40, 37);
+
         if (this._menuProgressLbl) {
-            this._menuProgressLbl.string = filled >= total ? 'COMPLETED!' : `${filled} / ${total} Bolts`;
+            this._menuProgressLbl.string = `${art.title} · ${pct}%`;
         }
         if (this._menuProgressFill) {
-            const ratio = Math.max(0.06, Math.min(1, total > 0 ? filled / total : 1));
+            const ratio = Math.max(0.05, Math.min(1, filled / Math.max(1, total)));
             this._menuProgressFill.setScale(ratio, 1, 1);
         }
-        if (this._buildBtnLbl) {
-            if (filled >= total) {
-                this._buildBtnLbl.string = 'NEXT ART';
-            } else if (DataManager.ins.bolts > 0) {
-                const step = Math.min(5, total - filled, DataManager.ins.bolts);
-                this._buildBtnLbl.string = `BUILD +${step}`;
-            } else {
-                this._buildBtnLbl.string = 'NO BOLTS';
-            }
-        }
     }
 
-    private onBuildActiveArt(): void {
-        const art = PixelGalleryService.getActiveArt();
-        if (PixelGalleryService.isCompleted(art.id)) {
+    // ==================== Post-Level Auto Screw-to-Pixel-Art Ceremony (GbzWinLayer + GbzPaintLayer) ====================
+
+    private buildWinPaintPopup(): void {
+        this._winNode = createPanel('GbzWinLayer', this.node, 750, 1334, '#000000', 185, 0, true);
+        const card = this.makeSpriteNode('card', this._winNode, 'UI_db2', 610, 920);
+
+        this._winTitleLbl = createLabel('win_title', card, 'LEVEL COMPLETE!', 40, '#16a34a', 540, 54);
+        this._winTitleLbl.isBold = true;
+        this._winTitleLbl.node.setPosition(0, 392, 0);
+
+        this._winStatusLbl = createLabel('win_sub', card, 'Crafting your Screw Art...', 24, '#475569', 520, 34);
+        this._winStatusLbl.node.setPosition(0, 338, 0);
+
+        // Wooden frame inside Win Popup where screws automatically fly in!
+        const wf = this.makeSpriteNode('win_wood_frame', card, 'wood_frame', 420, 420);
+        wf.setPosition(0, 100, 0);
+        this._winArtCanvas = new Node('win_art_canvas');
+        this._winArtCanvas.setParent(wf);
+        this._winArtCanvas.setPosition(0, 0, 0);
+
+        // Live progress bar climbing during the auto screw-in animation
+        const barTrack = this.makeSpriteNode('win_jdt_track', card, 'UI_jdt_1', 420, 38);
+        barTrack.setPosition(0, -148, 0);
+        this._winProgFill = this.makeSpriteNode('win_jdt_fill', barTrack, 'UI_jdt_2', 420, 38);
+        this._winProgFill.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
+        this._winProgFill.setPosition(-210, 0, 0);
+        this._winProgLbl = createLabel('win_jdt_lbl', barTrack, '0%', 22, '#ffffff', 320, 32);
+        this._winProgLbl.isBold = true;
+
+        // Primary CTA FIRST: NEXT LEVEL
+        createButton('btn_next', card, 'NEXT LEVEL', 380, 88, '#22c55e', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
-            this.openGallery();
-            return;
-        }
-        if (DataManager.ins.bolts <= 0) {
-            AudioManager.ins.play(AudioClips.CLICK_ERROR);
-            this.showToast('Clear levels to earn more Bolts!');
-            return;
-        }
-        const res = PixelGalleryService.buildArt(art.id, 5);
-        if (res.placed > 0) {
-            AudioManager.ins.play(res.justCompleted ? AudioClips.GAME_WIN : AudioClips.SCREW_IN);
-            MonetizationManager.ins.trackEvent('gallery_build', {
-                artId: art.id,
-                placed: res.placed,
-                completed: res.justCompleted,
-            });
-            this.refreshHeader();
-            if (res.justCompleted) {
-                this.showToast(`${art.title} Complete! +${res.rewardCoins} Coins & +1 All Boosters!`);
-            } else {
-                this.showToast(`Placed ${res.placed} Bolts!`);
+            this._actions?.onNextLevel();
+        }, 34, '#ffffff', 28).setPosition(0, -252, 0);
+
+        createButton('btn_home', card, 'HOME', 220, 56, '#64748b', () => {
+            AudioManager.ins.play(AudioClips.GAME_CLICK);
+            DataManager.ins.advanceLevel();
+            this._actions?.onBackMenu();
+        }, 24, '#ffffff', 18).setPosition(0, -356, 0);
+
+        this._winNode.active = false;
+    }
+
+    private playWinScrewArtCeremony(): void {
+        if (!this._winArtCanvas) return;
+        const { art, fromCount, toCount, justCompleted } = PixelGalleryService.advanceArtAfterLevelWin();
+        const total = art.cells.length;
+        const cellStep = 32;
+        const screwSize = 30;
+        const half = ((art.gridSize - 1) * cellStep) / 2;
+
+        // 1. Render initial state (before this level's newly earned screws fly in)
+        this.drawPixelArtStatic(this._winArtCanvas, art, fromCount, cellStep, screwSize);
+
+        const setBar = (cnt: number) => {
+            const pct = Math.round((cnt / Math.max(1, total)) * 100);
+            if (this._winProgLbl) this._winProgLbl.string = `${art.title} · ${pct}%`;
+            if (this._winProgFill) {
+                this._winProgFill.setScale(Math.max(0.05, Math.min(1, cnt / Math.max(1, total))), 1, 1);
             }
+        };
+        setBar(fromCount);
+        if (this._winTitleLbl) this._winTitleLbl.string = 'LEVEL COMPLETE!';
+        if (this._winStatusLbl) this._winStatusLbl.string = `Placing ${toCount - fromCount} screws into ${art.title}...`;
+
+        // 2. Animate each newly earned screw flying from below & spinning into its pixel slot!
+        const newCount = toCount - fromCount;
+        for (let k = 0; k < newCount; k++) {
+            const idx = fromCount + k;
+            const cell = art.cells[idx];
+            const tx = cell.col * cellStep - half;
+            const ty = half - cell.row * cellStep;
+            const delay = 0.2 + k * 0.055;
+
+            const s = this.makeSpriteNode(`fly_px_${idx}`, this._winArtCanvas, `gbz_screw${cell.colorId}`, screwSize, screwSize);
+            s.setPosition((Math.random() - 0.5) * 140, -240, 0);
+            s.setScale(Vec3.ZERO);
+
+            const curStepCount = idx + 1;
+            const isLast = k === newCount - 1;
+            tween(s)
+                .delay(delay)
+                .call(() => {
+                    if (k % 2 === 0) AudioManager.ins.play(AudioClips.SCREW_IN);
+                })
+                .to(0.24, { position: new Vec3(tx, ty, 0), scale: new Vec3(1.22, 1.22, 1), angle: 360 }, { easing: 'quadOut' })
+                .to(0.09, { scale: Vec3.ONE })
+                .call(() => {
+                    setBar(curStepCount);
+                    if (isLast) {
+                        if (justCompleted) {
+                            AudioManager.ins.play(AudioClips.BOX_FULL);
+                            if (this._winTitleLbl) this._winTitleLbl.string = 'ARTWORK COMPLETE!';
+                            if (this._winStatusLbl) this._winStatusLbl.string = `${art.title} saved to My Art! (+1 All Boosters)`;
+                        } else {
+                            if (this._winStatusLbl) this._winStatusLbl.string = `${art.title} · ${Math.round((toCount / total) * 100)}% Complete!`;
+                        }
+                    }
+                })
+                .start();
         }
     }
 
-    // ==================== Pause Popup ====================
+    // ==================== Pause / Lose / Settings / Gallery ====================
 
     private buildPausePopup(): void {
         this._pauseNode = createPanel('GbzExitLayer', this.node, 750, 1334, '#000000', 165, 0, true);
@@ -590,162 +518,72 @@ export class UIManager extends Component {
         this._pauseNode.active = false;
     }
 
-    // ==================== Win Popup (2x Reward AD + Win Streak) ====================
-
-    private buildWinPopup(): void {
-        this._winNode = createPanel('GbzWinLayer', this.node, 750, 1334, '#000000', 180, 0, true);
-        const card = this.makeSpriteNode('card', this._winNode, 'UI_db2', 580, 680);
-
-        this._winTitleLbl = createLabel('win_title', card, 'LEVEL COMPLETE!', 42, '#16a34a', 520, 58);
-        this._winTitleLbl.node.setPosition(0, 245, 0);
-
-        this._winStreakLbl = createLabel('win_streak', card, 'WIN STREAK x1!', 30, '#ea580c', 480, 44);
-        this._winStreakLbl.node.setPosition(0, 172, 0);
-
-        const rewardBox = createPanel('reward_box', card, 460, 124, '#f1f5f9', 255, 24);
-        rewardBox.setPosition(0, 64, 0);
-        this._winRewardLbl = createLabel('win_reward', rewardBox, '+35 Coins   +12 Bolts', 30, '#0f172a', 430, 46);
-
-        // Primary button FIRST: NEXT LEVEL
-        const nextBtn = createButton('btn_next', card, 'NEXT LEVEL', 390, 90, '#22c55e', () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            this._actions?.onNextLevel();
-        }, 34, '#ffffff', 28);
-        nextBtn.setPosition(0, -60, 0);
-        this._winNextLbl = nextBtn.getChildByName('Label')?.getComponent(Label) || null;
-
-        // Secondary button BELOW: 2x REWARD (AD)
-        this._winDoubleBtn = createButton('btn_2x', card, '2x REWARD (AD)', 360, 76, '#f59e0b', () => {
-            if (this._winDoubled) return;
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            MonetizationManager.ins.showRewardedAd('double_win_reward', () => {
-                this._winDoubled = true;
-                DataManager.ins.addCoins(DataManager.ins.lastWinCoins);
-                DataManager.ins.addBolts(DataManager.ins.lastWinBolts);
-                if (this._winDoubleBtn) this._winDoubleBtn.active = false;
-                if (this._winRewardLbl) {
-                    this._winRewardLbl.string = `+${DataManager.ins.lastWinCoins * 2} Coins   +${DataManager.ins.lastWinBolts * 2} Bolts (2x!)`;
-                }
-                this.refreshHeader();
-            });
-        }, 26, '#ffffff', 24);
-        this._winDoubleBtn.setPosition(0, -166, 0);
-
-        createButton('btn_home', card, 'HOME', 220, 56, '#64748b', () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            this._actions?.onBackMenu();
-        }, 24, '#ffffff', 18).setPosition(0, -258, 0);
-
-        this._winNode.active = false;
-    }
-
-    // ==================== Lose Popup (High-Conversion Streak Protection) ====================
-
     private buildLosePopup(): void {
         this._loseNode = createPanel('GbzLoseFullLayer', this.node, 750, 1334, '#000000', 180, 0, true);
-        const card = this.makeSpriteNode('card', this._loseNode, 'UI_db2', 580, 720);
+        const card = this.makeSpriteNode('card', this._loseNode, 'UI_db2', 560, 520);
 
-        createLabel('lose_title', card, 'TRAY FULL!', 46, '#ef4444', 460, 58).node.setPosition(0, 265, 0);
-        createLabel('lose_sub', card, 'Clear all screws in the tray & keep playing!', 22, '#475569', 500, 34).node.setPosition(0, 212, 0);
+        createLabel('lose_title', card, 'TRAY FULL!', 46, '#ef4444', 440, 58).node.setPosition(0, 170, 0);
+        createLabel('lose_sub', card, 'Watch a short ad to clear the tray & continue!', 22, '#475569', 480, 44).node.setPosition(0, 96, 0);
 
-        // Win Streak Danger Callout
-        this._loseStreakBanner = createPanel('streak_warn', card, 480, 92, '#fff7ed', 255, 20);
-        this._loseStreakBanner.setPosition(0, 114, 0);
-        this._loseStreakLbl = createLabel('sw_lbl', this._loseStreakBanner, 'DON\'T LOSE YOUR x3 STREAK!', 25, '#c2410c', 450, 44);
-
-        // Option 1: Rewarded Ad Revive
-        const revAdBtn = createButton('btn_revive_ad', card, 'REVIVE & SAVE STREAK (AD)', 440, 86, '#22c55e', () => {
+        createButton('btn_revive_ad', card, 'FREE REVIVE (AD)', 400, 90, '#22c55e', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
-            MonetizationManager.ins.showRewardedAd('revive_streak', () => {
+            MonetizationManager.ins.showRewardedAd('revive', () => {
                 if (this._loseNode) this._loseNode.active = false;
                 this._actions?.onRevive();
             });
-        }, 25, '#ffffff', 24);
-        revAdBtn.setPosition(0, -18, 0);
-        this._loseReviveAdLbl = revAdBtn.getChildByName('Label')?.getComponent(Label) || null;
+        }, 30, '#ffffff', 26).setPosition(0, -24, 0);
 
-        // Option 2: Coin Revive (ECONOMY.COST_REVIVE Coins)
-        createButton('btn_revive_coin', card, `REVIVE  (${ECONOMY.COST_REVIVE} COINS)`, 440, 78, '#f59e0b', () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            if (DataManager.ins.spendCoins(ECONOMY.COST_REVIVE)) {
-                if (this._loseNode) this._loseNode.active = false;
-                this.refreshHeader();
-                this._actions?.onRevive();
-            } else {
-                this.showToast('Not enough coins! Watch an Ad or visit Shop.');
-            }
-        }, 26, '#ffffff', 24).setPosition(0, -124, 0);
-
-        // Option 3: Give Up (Resets Streak)
-        const giveUpBtn = createButton('btn_giveup', card, 'Give Up (Reset Streak)', 340, 62, '#94a3b8', () => {
+        createButton('btn_retry', card, 'TRY AGAIN', 320, 68, '#f59e0b', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             if (this._loseNode) this._loseNode.active = false;
-            this._actions?.onGiveUp();
-        }, 22, '#ffffff', 18);
-        giveUpBtn.setPosition(0, -238, 0);
-        this._loseGiveUpLbl = giveUpBtn.getChildByName('Label')?.getComponent(Label) || null;
+            this._actions?.onRestart();
+        }, 26, '#ffffff', 22).setPosition(0, -138, 0);
 
         this._loseNode.active = false;
     }
 
-    // ==================== Settings Popup ====================
-
     private buildSettingsPopup(): void {
         this._settingsNode = createPanel('GbzSettingLayer', this.node, 750, 1334, '#000000', 170, 0, true);
-        const card = this.makeSpriteNode('panel', this._settingsNode, 'UI_db2', 540, 520);
+        const card = this.makeSpriteNode('panel', this._settingsNode, 'UI_db2', 520, 380);
 
         const closeBtn = this.makeSpriteFit('btn_close', card, 'btn_close', 58, 58);
-        closeBtn.setPosition(230, 218, 0);
+        closeBtn.setPosition(220, 150, 0);
         this.bindTap(closeBtn, () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             if (this._settingsNode) this._settingsNode.active = false;
         });
 
-        createLabel('title', card, 'SETTINGS', 40, '#1e293b', 300, 52).node.setPosition(0, 185, 0);
+        createLabel('title', card, 'SETTINGS', 40, '#1e293b', 300, 52).node.setPosition(0, 118, 0);
 
-        const soundBtn = createButton('btn_sound', card, 'SOUND FX: ON', 360, 72, '#0ea5e9', () => {
+        const soundBtn = createButton('btn_sound', card, 'SOUND FX: ON', 360, 76, '#0ea5e9', () => {
             DataManager.ins.soundEnabled = !DataManager.ins.soundEnabled;
             DataManager.ins.save();
             this.refreshSettingsLabels();
             if (DataManager.ins.soundEnabled) AudioManager.ins.play(AudioClips.GAME_CLICK);
-        }, 26, '#ffffff', 20);
-        soundBtn.setPosition(0, 70, 0);
+        }, 28, '#ffffff', 22);
+        soundBtn.setPosition(0, -16, 0);
         this._soundBtnLbl = soundBtn.getChildByName('Label')?.getComponent(Label) || null;
-
-        const countryBtn = createButton('btn_country', card, 'COUNTRY: US', 360, 72, '#6366f1', () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            DailyAndLeaderboardService.cyclePlayerCountry();
-            this.refreshSettingsLabels();
-            this.refreshHeader();
-        }, 26, '#ffffff', 20);
-        countryBtn.setPosition(0, -32, 0);
-        this._countryBtnLbl = countryBtn.getChildByName('Label')?.getComponent(Label) || null;
-
-        this._noAdsStatusLbl = createLabel('noads_lbl', card, 'Interstitial Ads: Active', 22, '#64748b', 420, 36);
-        this._noAdsStatusLbl.node.setPosition(0, -135, 0);
 
         this._settingsNode.active = false;
     }
 
-    // ==================== Pixel Art Gallery Modal ====================
-
     private buildGalleryModal(): void {
-        this._galleryNode = createPanel('GalleryModal', this.node, 750, 1334, '#000000', 180, 0, true);
-        const card = this.makeSpriteNode('panel', this._galleryNode, 'UI_db2', 660, 940);
+        this._galleryNode = createPanel('XiangCeLayer', this.node, 750, 1334, '#000000', 180, 0, true);
+        const card = this.makeSpriteNode('panel', this._galleryNode, 'UI_db2', 660, 960);
 
         const closeBtn = this.makeSpriteFit('btn_close', card, 'btn_close', 58, 58);
-        closeBtn.setPosition(288, 424, 0);
+        closeBtn.setPosition(288, 434, 0);
         this.bindTap(closeBtn, () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             if (this._galleryNode) this._galleryNode.active = false;
         });
 
-        createLabel('title', card, 'PIXEL ART GALLERY', 36, '#0f172a', 460, 48).node.setPosition(0, 405, 0);
-        createLabel('sub', card, 'Spend Bolts from cleared levels to complete artworks!', 21, '#475569', 560, 32).node.setPosition(0, 355, 0);
+        createLabel('title', card, 'MY ARTWORKS', 38, '#0f172a', 420, 48).node.setPosition(0, 412, 0);
+        createLabel('sub', card, 'Clear levels to craft & collect all 6 screw artworks!', 21, '#475569', 540, 32).node.setPosition(0, 364, 0);
 
         this._galleryListRoot = new Node('gallery_grid');
         this._galleryListRoot.setParent(card);
-        this._galleryListRoot.setPosition(0, -25, 0);
+        this._galleryListRoot.setPosition(0, -24, 0);
 
         this._galleryNode.active = false;
     }
@@ -755,182 +593,72 @@ export class UIManager extends Component {
         this._galleryListRoot.removeAllChildren();
 
         const activeId = DataManager.ins.gallery.activeArtId;
+        const holeSf = ResManager.ins.getGameSprite('hole');
+
         PIXEL_GALLERY.forEach((art, idx) => {
             const col = idx % 2;
             const row = Math.floor(idx / 2);
             const x = col === 0 ? -148 : 148;
-            const y = 230 - row * 238;
+            const y = 246 - row * 252;
 
             const filled = PixelGalleryService.getFilledCount(art.id);
             const total = art.cells.length;
+            const pct = Math.round((filled / Math.max(1, total)) * 100);
             const done = filled >= total;
             const isSelected = art.id === activeId;
 
-            const bgHex = isSelected ? '#e0f2fe' : '#f8fafc';
-            const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 274, 214, bgHex, 255, 22);
+            const bgHex = done ? '#fef9c3' : (isSelected ? '#e0f2fe' : '#f8fafc');
+            const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 274, 232, bgHex, 255, 22);
             tile.setPosition(x, y, 0);
 
-            createLabel('t', tile, art.title, 24, '#0f172a', 240, 32).node.setPosition(0, 74, 0);
-            createLabel('p', tile, done ? 'COMPLETED' : `${filled} / ${total} Bolts`, 20, done ? '#16a34a' : '#0284c7', 240, 28).node.setPosition(0, 36, 0);
-            createLabel('r', tile, `Reward: +${art.rewardCoins} Coins`, 18, '#b45309', 240, 26).node.setPosition(0, 4, 0);
+            // Real mini 3D screw pixel-art thumbnail
+            const thumb = new Node('thumb');
+            thumb.setParent(tile);
+            thumb.setPosition(0, 28, 0);
+            const step = 12;
+            const half = ((art.gridSize - 1) * step) / 2;
+            for (let i = 0; i < total; i++) {
+                const cell = art.cells[i];
+                const px = cell.col * step - half;
+                const py = half - cell.row * step;
+                if (i < filled) {
+                    const s = this.makeSpriteNode(`m_${i}`, thumb, `gbz_screw${cell.colorId}`, 11, 11);
+                    s.setPosition(px, py, 0);
+                } else {
+                    const h = new Node(`e_${i}`);
+                    h.setParent(thumb);
+                    h.setPosition(px, py, 0);
+                    const ui = h.addComponent(UITransform);
+                    ui.setContentSize(8, 8);
+                    const sp = h.addComponent(Sprite);
+                    sp.sizeMode = Sprite.SizeMode.CUSTOM;
+                    if (holeSf) sp.spriteFrame = holeSf;
+                    const op = h.addComponent(UIOpacity);
+                    op.opacity = 90;
+                }
+            }
 
-            const btnText = isSelected ? 'ACTIVE' : 'SELECT';
-            const btnColor = isSelected ? '#22c55e' : '#3b82f6';
-            createButton('sel', tile, btnText, 190, 52, btnColor, () => {
+            createLabel('t', tile, art.title, 22, '#0f172a', 240, 28).node.setPosition(0, -48, 0);
+            createLabel('p', tile, done ? 'COMPLETED' : `${pct}%`, 18, done ? '#16a34a' : '#0284c7', 200, 24).node.setPosition(0, -78, 0);
+
+            this.bindTap(tile, () => {
                 AudioManager.ins.play(AudioClips.GAME_CLICK);
                 PixelGalleryService.setActiveArt(art.id);
                 this.refreshHeader();
-                this.refreshGalleryModal();
+                if (this._galleryNode) this._galleryNode.active = false;
                 this.showToast(`Selected ${art.title}!`);
-            }, 22, '#ffffff', 16).setPosition(0, -56, 0);
-        });
-    }
-
-    // ==================== Leaderboard Modal (Country + Global) ====================
-
-    private buildLeaderboardModal(): void {
-        this._leaderboardNode = createPanel('LeaderboardModal', this.node, 750, 1334, '#000000', 180, 0, true);
-        const card = this.makeSpriteNode('panel', this._leaderboardNode, 'UI_db2', 660, 980);
-
-        const closeBtn = this.makeSpriteFit('btn_close', card, 'btn_close', 58, 58);
-        closeBtn.setPosition(288, 444, 0);
-        this.bindTap(closeBtn, () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            if (this._leaderboardNode) this._leaderboardNode.active = false;
-        });
-
-        createLabel('title', card, 'LEADERBOARD', 38, '#0f172a', 420, 48).node.setPosition(0, 424, 0);
-
-        // Tabs: Countries vs Global
-        this._lbCountryTabBtn = createButton('tab_c', card, 'COUNTRIES', 240, 58, '#0ea5e9', () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            this._lbTab = 'countries';
-            this.refreshLeaderboardModal();
-        }, 22, '#ffffff', 18);
-        this._lbCountryTabBtn.setPosition(-134, 354, 0);
-
-        this._lbGlobalTabBtn = createButton('tab_g', card, 'GLOBAL', 240, 58, '#94a3b8', () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            this._lbTab = 'global';
-            this.refreshLeaderboardModal();
-        }, 22, '#ffffff', 18);
-        this._lbGlobalTabBtn.setPosition(134, 354, 0);
-
-        this._lbListRoot = new Node('lb_list');
-        this._lbListRoot.setParent(card);
-        this._lbListRoot.setPosition(0, 16, 0);
-
-        // Footer: Country Switcher + Share Button
-        const switchBtn = createButton('btn_sw_c', card, 'MY REGION: US', 250, 62, '#6366f1', () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            DailyAndLeaderboardService.cyclePlayerCountry();
-            this.refreshHeader();
-            this.refreshLeaderboardModal();
-        }, 20, '#ffffff', 18);
-        switchBtn.setPosition(-140, -408, 0);
-        this._lbMyCountryLbl = switchBtn.getChildByName('Label')?.getComponent(Label) || null;
-
-        createButton('btn_share', card, 'SHARE SCORE', 250, 62, '#22c55e', () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            MonetizationManager.ins.shareResult(DailyAndLeaderboardService.buildShareText());
-        }, 20, '#ffffff', 18).setPosition(140, -408, 0);
-
-        this._leaderboardNode.active = false;
-    }
-
-    private refreshLeaderboardModal(): void {
-        if (!this._lbListRoot) return;
-        this._lbListRoot.removeAllChildren();
-        if (this._lbMyCountryLbl) {
-            this._lbMyCountryLbl.string = `REGION: ${DataManager.ins.playerCountry}`;
-        }
-
-        const startY = 266;
-        const rowH = 66;
-
-        if (this._lbTab === 'countries') {
-            const list = DailyAndLeaderboardService.getCountryLeaderboard().slice(0, 9);
-            list.forEach((entry, idx) => {
-                const bg = entry.isPlayerCountry ? '#dcfce7' : '#f8fafc';
-                const row = createPanel(`c_row_${idx}`, this._lbListRoot!, 580, 58, bg, 255, 16);
-                row.setPosition(0, startY - idx * rowH, 0);
-
-                createLabel('rk', row, `#${idx + 1}`, 24, idx < 3 ? '#ea580c' : '#475569', 70, 36).node.setPosition(-242, 0, 0);
-                createLabel('nm', row, `[${entry.code}] ${entry.name}${entry.isPlayerCountry ? ' (You)' : ''}`, 22, '#0f172a', 320, 36).node.setPosition(-30, 0, 0);
-                createLabel('sc', row, `${entry.score.toLocaleString()}`, 22, '#0284c7', 140, 36).node.setPosition(206, 0, 0);
             });
-        } else {
-            const list = DailyAndLeaderboardService.getGlobalPlayerLeaderboard().slice(0, 9);
-            list.forEach((entry, idx) => {
-                const bg = entry.isSelf ? '#fef9c3' : '#f8fafc';
-                const row = createPanel(`p_row_${idx}`, this._lbListRoot!, 580, 58, bg, 255, 16);
-                row.setPosition(0, startY - idx * rowH, 0);
-
-                createLabel('rk', row, `#${entry.rank}`, 24, entry.rank <= 3 ? '#ea580c' : '#475569', 70, 36).node.setPosition(-242, 0, 0);
-                createLabel('nm', row, `[${entry.country}] ${entry.name}`, 22, '#0f172a', 310, 36).node.setPosition(-34, 0, 0);
-                createLabel('sc', row, `${entry.score} pts`, 22, '#16a34a', 150, 36).node.setPosition(204, 0, 0);
-            });
-        }
-    }
-
-    // ==================== Overseas IAP Shop Modal ====================
-
-    private buildShopModal(): void {
-        this._shopNode = createPanel('ShopModal', this.node, 750, 1334, '#000000', 180, 0, true);
-        const card = this.makeSpriteNode('panel', this._shopNode, 'UI_db2', 640, 820);
-
-        const closeBtn = this.makeSpriteFit('btn_close', card, 'btn_close', 58, 58);
-        closeBtn.setPosition(276, 364, 0);
-        this.bindTap(closeBtn, () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            if (this._shopNode) this._shopNode.active = false;
-        });
-
-        createLabel('title', card, 'STORE', 40, '#0f172a', 320, 50).node.setPosition(0, 344, 0);
-        createLabel('sub', card, 'Support the game & power up your puzzles!', 21, '#475569', 540, 32).node.setPosition(0, 294, 0);
-
-        this._shopListRoot = new Node('shop_list');
-        this._shopListRoot.setParent(card);
-        this._shopListRoot.setPosition(0, -10, 0);
-
-        this._shopNode.active = false;
-    }
-
-    private refreshShopModal(): void {
-        if (!this._shopListRoot) return;
-        this._shopListRoot.removeAllChildren();
-
-        IAP_CATALOG.forEach((prod, idx) => {
-            const y = 178 - idx * 194;
-            const ownedNoAds = !!prod.removeAds && DataManager.ins.noAdsPurchased;
-            const row = createPanel(`iap_${idx}`, this._shopListRoot!, 560, 168, '#f8fafc', 255, 22);
-            row.setPosition(0, y, 0);
-
-            createLabel('t', row, prod.title, 26, '#0f172a', 360, 36).node.setPosition(-74, 34, 0);
-            createLabel('s', row, prod.subtitle, 19, '#475569', 360, 44).node.setPosition(-74, -22, 0);
-
-            const buyText = ownedNoAds ? 'OWNED' : prod.priceDisplay;
-            const buyColor = ownedNoAds ? '#94a3b8' : '#22c55e';
-            createButton('buy', row, buyText, 146, 68, buyColor, () => {
-                if (ownedNoAds) return;
-                AudioManager.ins.play(AudioClips.GET_GOLD);
-                MonetizationManager.ins.purchase(prod.sku, (p) => {
-                    this.showToast(`Purchased ${p.title}!`);
-                    this.refreshHeader();
-                    this.refreshShopModal();
-                });
-            }, 24, '#ffffff', 18).setPosition(188, 0, 0);
         });
     }
 
     // ==================== Toast ====================
 
     private buildToast(): void {
-        this._toastNode = createPanel('Toast', this.node, 520, 64, '#0f172a', 235, 32);
+        this._toastNode = createPanel('Toast', this.node, 480, 62, '#0f172a', 235, 31);
         this._toastNode.setPosition(0, 140, 0);
         this._toastOp = this._toastNode.addComponent(UIOpacity);
         this._toastOp.opacity = 0;
-        this._toastLabel = createLabel('ToastLbl', this._toastNode, '', 22, '#ffffff', 490, 44);
+        this._toastLabel = createLabel('ToastLbl', this._toastNode, '', 22, '#ffffff', 450, 44);
         this._toastNode.active = false;
     }
 
@@ -943,52 +671,24 @@ export class UIManager extends Component {
         this.refreshHeader();
     }
 
-    public showGameHUD(isDaily = false, levelNumber = DataManager.ins.level): void {
+    public showGameHUD(levelNumber = DataManager.ins.level): void {
         this.hidePopups();
         if (this._menuNode) this._menuNode.active = false;
         if (this._hudNode) this._hudNode.active = true;
         this.setSmashMode(false);
-        if (this._levelLabel) {
-            this._levelLabel.string = isDaily ? `DAILY · LV.${levelNumber}` : `LEVEL ${levelNumber}`;
-        }
+        if (this._levelLabel) this._levelLabel.string = `LEVEL ${levelNumber}`;
         this.refreshHeader();
         this.setProgress(0);
     }
 
     public showWin(): void {
         this.hidePopups();
-        this._winDoubled = false;
-        const dm = DataManager.ins;
-        if (this._winTitleLbl) {
-            this._winTitleLbl.string = dm.isDailyMode ? 'DAILY COMPLETE!' : 'LEVEL COMPLETE!';
-        }
-        if (this._winStreakLbl) {
-            this._winStreakLbl.string = `WIN STREAK x${dm.winStreak}!`;
-        }
-        if (this._winRewardLbl) {
-            const msTag = dm.lastMilestoneCoins > 0 ? ` (incl. +${dm.lastMilestoneCoins} Bonus!)` : '';
-            this._winRewardLbl.string = `+${dm.lastWinCoins} Coins   +${dm.lastWinBolts} Bolts${msTag}`;
-        }
-        if (this._winDoubleBtn) this._winDoubleBtn.active = true;
-        if (this._winNextLbl) {
-            this._winNextLbl.string = dm.isDailyMode ? 'BACK HOME' : 'NEXT LEVEL';
-        }
         if (this._winNode) this._winNode.active = true;
+        this.playWinScrewArtCeremony();
     }
 
     public showLose(): void {
         this.hidePopups();
-        const streak = DataManager.ins.winStreak;
-        if (this._loseStreakBanner) this._loseStreakBanner.active = streak > 0;
-        if (this._loseStreakLbl) {
-            this._loseStreakLbl.string = `DON'T LOSE YOUR x${streak} STREAK!`;
-        }
-        if (this._loseReviveAdLbl) {
-            this._loseReviveAdLbl.string = streak > 0 ? 'REVIVE & SAVE STREAK (AD)' : 'FREE REVIVE (AD)';
-        }
-        if (this._loseGiveUpLbl) {
-            this._loseGiveUpLbl.string = streak > 0 ? 'Give Up (Reset Streak)' : 'Try Again';
-        }
         if (this._loseNode) this._loseNode.active = true;
     }
 
@@ -1002,24 +702,12 @@ export class UIManager extends Component {
         if (this._galleryNode) this._galleryNode.active = true;
     }
 
-    public openLeaderboard(): void {
-        this.refreshLeaderboardModal();
-        if (this._leaderboardNode) this._leaderboardNode.active = true;
-    }
-
-    public openShop(): void {
-        this.refreshShopModal();
-        if (this._shopNode) this._shopNode.active = true;
-    }
-
     public hidePopups(): void {
         if (this._pauseNode) this._pauseNode.active = false;
         if (this._winNode) this._winNode.active = false;
         if (this._loseNode) this._loseNode.active = false;
         if (this._settingsNode) this._settingsNode.active = false;
         if (this._galleryNode) this._galleryNode.active = false;
-        if (this._leaderboardNode) this._leaderboardNode.active = false;
-        if (this._shopNode) this._shopNode.active = false;
     }
 
     public setSmashMode(active: boolean): void {
@@ -1028,63 +716,30 @@ export class UIManager extends Component {
 
     public refreshHeader(): void {
         const dm = DataManager.ins;
-        if (this._coinsLbl) this._coinsLbl.string = `${dm.coins}`;
-        if (this._boltsLbl) this._boltsLbl.string = `${dm.bolts}`;
-        if (this._menuStreakLbl) this._menuStreakLbl.string = `x${dm.winStreak} WIN`;
-
-        if (this._hudStreakNode && this._hudStreakLbl) {
-            this._hudStreakNode.active = dm.winStreak > 0;
-            this._hudStreakLbl.string = `STREAK x${dm.winStreak}`;
-        }
-
         if (this._playBtnLbl) this._playBtnLbl.string = `PLAY · LEVEL ${dm.level}`;
-        if (this._playSubLbl) {
-            const tier = dm.getWinStreakTier();
-            if (tier >= 3) this._playSubLbl.string = `Win Streak x${dm.winStreak} Active: +1 Slot & +1 Box at Start!`;
-            else if (tier >= 1) this._playSubLbl.string = `Win Streak x${dm.winStreak} Active: +1 Extra Slot at Start!`;
-            else this._playSubLbl.string = 'Build a Win Streak for Free Start-of-Level Boosts!';
-        }
 
-        const todayKey = DailyAndLeaderboardService.getTodayDateKey();
-        const dailyDone = dm.isDailyCompleted(todayKey);
-        if (this._dailyBadgeLbl) {
-            this._dailyBadgeLbl.string = dailyDone ? 'COMPLETED' : '+100C +20B';
-        }
-        if (this._rankBadgeLbl) {
-            this._rankBadgeLbl.string = `${dm.playerCountry} · ${dm.totalScore} pts`;
-        }
-        if (this._galleryBadgeLbl) {
-            this._galleryBadgeLbl.string = `${PixelGalleryService.getCompletedTotal()} / ${PIXEL_GALLERY.length} Done`;
-        }
-
-        // Update bottom skill count / Coin / AD badges
+        // Bottom skill count / AD badges
         const types: SkillType[] = [SkillType.UNLOCK_SLOT, SkillType.CLEAR_TRAY, SkillType.SMASH_BOARD];
         for (const t of types) {
             const lbl = this._skillBadgeLabels.get(t);
             const sp = this._skillBadgeSprites.get(t);
             if (!lbl) continue;
             const cnt = dm.getSkillCount(t);
-            if (cnt > 0) {
-                lbl.string = String(cnt);
-            } else {
-                lbl.string = dm.coins >= ECONOMY.COST_BOOSTER ? `${ECONOMY.COST_BOOSTER}C` : 'AD';
-            }
+            lbl.string = cnt > 0 ? String(cnt) : 'AD';
             if (sp) {
                 const sf = ResManager.ins.getUiSprite(cnt > 0 ? 'badge_count' : 'badge_ad');
                 if (sf) sp.spriteFrame = sf;
                 const ui = sp.node.getComponent(UITransform);
-                if (ui) ui.setContentSize(cnt > 0 ? 76 : 96, cnt > 0 ? 76 : 68);
+                if (ui) ui.setContentSize(cnt > 0 ? 76 : 94, cnt > 0 ? 76 : 68);
             }
         }
 
-        this.renderActivePixelArt();
+        this.renderHomePixelArt();
     }
 
     public setProgress(ratio: number): void {
         const pct = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
-        if (this._progressLabel) {
-            this._progressLabel.string = `${pct}%`;
-        }
+        if (this._progressLabel) this._progressLabel.string = `${pct}%`;
     }
 
     public showToast(msg: string): void {
@@ -1094,7 +749,7 @@ export class UIManager extends Component {
         this._toastOp.opacity = 255;
         tween(this._toastOp)
             .stop()
-            .delay(1.3)
+            .delay(1.2)
             .to(0.35, { opacity: 0 })
             .call(() => {
                 if (this._toastNode) this._toastNode.active = false;
@@ -1105,14 +760,6 @@ export class UIManager extends Component {
     private refreshSettingsLabels(): void {
         if (this._soundBtnLbl) {
             this._soundBtnLbl.string = `SOUND FX: ${DataManager.ins.soundEnabled ? 'ON' : 'OFF'}`;
-        }
-        if (this._countryBtnLbl) {
-            this._countryBtnLbl.string = `COUNTRY: ${DataManager.ins.playerCountry}`;
-        }
-        if (this._noAdsStatusLbl) {
-            this._noAdsStatusLbl.string = DataManager.ins.noAdsPurchased
-                ? 'Interstitial Ads: Removed (VIP)'
-                : 'Interstitial Ads: Active';
         }
     }
 }

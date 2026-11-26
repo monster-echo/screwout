@@ -179,6 +179,45 @@ export class PixelGalleryService {
     }
 
     /**
+     * Original post-level mechanic: every level win automatically converts collected screws
+     * into ~34% of the active pixel artwork (completing 1 full artwork every 3 levels!).
+     */
+    public static advanceArtAfterLevelWin(): {
+        art: PixelArtDef;
+        fromCount: number;
+        toCount: number;
+        justCompleted: boolean;
+    } {
+        // If current active art is already completed, auto-pick the next unfinished artwork
+        let art = this.getActiveArt();
+        if (this.isCompleted(art.id)) {
+            const nextUnfinished = PIXEL_GALLERY.find((a) => !this.isCompleted(a.id));
+            if (nextUnfinished) {
+                art = nextUnfinished;
+                DataManager.ins.gallery.activeArtId = art.id;
+            }
+        }
+
+        const total = art.cells.length;
+        const fromCount = this.getFilledCount(art.id);
+        // Fill ~1/3 of the artwork per level win (completes in 3 levels, matching original 33% -> 67% -> 100%)
+        const step = Math.ceil(total / 3);
+        const toCount = Math.min(total, fromCount + step);
+        DataManager.ins.gallery.filledCounts[art.id] = toCount;
+
+        let justCompleted = false;
+        if (toCount >= total && !DataManager.ins.gallery.claimedRewards.includes(art.id)) {
+            DataManager.ins.gallery.claimedRewards.push(art.id);
+            DataManager.ins.skillCounts.slot += 1;
+            DataManager.ins.skillCounts.clear += 1;
+            DataManager.ins.skillCounts.melt += 1;
+            justCompleted = true;
+        }
+        DataManager.ins.save();
+        return { art, fromCount, toCount, justCompleted };
+    }
+
+    /**
      * Spend up to `maxBolts` (default 5) from DataManager.ins.bolts to build the artwork.
      * Automatically grants completion reward once finished!
      */
@@ -206,10 +245,11 @@ export class PixelGalleryService {
         let rewardCoins = 0;
         if (nextCount >= art.cells.length && !DataManager.ins.gallery.claimedRewards.includes(artId)) {
             DataManager.ins.gallery.claimedRewards.push(artId);
-            DataManager.ins.addCoins(art.rewardCoins);
+            DataManager.ins.skillCounts.slot += 1;
             DataManager.ins.skillCounts.clear += 1;
+            DataManager.ins.skillCounts.melt += 1;
             justCompleted = true;
-            rewardCoins = art.rewardCoins;
+            rewardCoins = 0;
         }
         DataManager.ins.save();
         return { placed: toPlace, justCompleted, rewardCoins };

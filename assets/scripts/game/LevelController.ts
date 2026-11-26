@@ -30,7 +30,7 @@ import {
     SCREW_FALLBACK_COLORS,
     SkillType,
 } from '../core/GameTypes';
-import { DataManager, ECONOMY } from '../core/DataManager';
+import { DataManager } from '../core/DataManager';
 import { AudioManager } from '../core/AudioManager';
 import { ResManager } from '../core/ResManager';
 import { MonetizationManager } from '../core/MonetizationManager';
@@ -171,15 +171,13 @@ export class LevelController extends Component {
         this.node.on(Node.EventType.TOUCH_START, this.onTouchStart, this);
     }
 
-    public async startLevel(levelNumber: number, isDaily = false, dailyDateKey = ''): Promise<void> {
+    public async startLevel(levelNumber: number): Promise<void> {
         this.unscheduleAllCallbacks();
         PhysicsSystem2D.instance.enable = false;
         this.configureCollisionMatrix();
 
         DataManager.ins.resetLevelRuntime();
-        DataManager.ins.isDailyMode = isDaily;
-        DataManager.ins.activeDailyDateKey = dailyDateKey;
-        MonetizationManager.ins.trackEvent('level_start', { levelNumber, isDaily });
+        MonetizationManager.ins.trackEvent('level_start', { levelNumber });
 
         this._isOver = false;
         this._inputBlocked = false;
@@ -210,7 +208,7 @@ export class LevelController extends Component {
         }
 
         this._totalScrewCount = lvData.totalHoles;
-        if (levelNumber === 1 && !isDaily) {
+        if (levelNumber === 1) {
             this.initLevelOneColors(this._totalScrewCount);
         } else {
             const cfg = ResManager.ins.getDifficultyConfig(levelNumber);
@@ -219,34 +217,7 @@ export class LevelController extends Component {
 
         this.buildBoards(lvData);
         this.initBoxes();
-        this.applyWinStreakBuffs();
         this._events?.onProgressChanged(0);
-    }
-
-    private applyWinStreakBuffs(): void {
-        const tier = DataManager.ins.getWinStreakTier();
-        if (tier <= 0) return;
-
-        // Tier 1+: Unlock 1 extra holding slot automatically at start
-        const bonusSlot = this._trayComp?.unlockOneSlot();
-        if (bonusSlot) {
-            bonusSlot.setScale(Vec3.ZERO);
-            tween(bonusSlot).delay(0.25).to(0.25, { scale: Vec3.ONE }, { easing: 'backOut' }).start();
-        }
-
-        // Tier 3+: Also unlock 3rd Target Box automatically at start
-        if (tier >= 3 && this._rootBoxes) {
-            for (const bNode of this._rootBoxes.children) {
-                const box = bNode.getComponent(TargetBox);
-                if (box && box.node.active && box.isLock()) {
-                    this.onBoxRefresh(box, -1, true);
-                    break;
-                }
-            }
-            this._events?.onToast(`Win Streak x${DataManager.ins.winStreak}! +1 Slot & +1 Box!`);
-        } else {
-            this._events?.onToast(`Win Streak x${DataManager.ins.winStreak}! +1 Extra Slot!`);
-        }
     }
 
     private configureCollisionMatrix(): void {
@@ -838,9 +809,6 @@ export class LevelController extends Component {
                 if (willFull || (boxRef.checkFull() && boxRef.dataAfterAni === null)) {
                     boxRef.nextIndex = -1;
                     this._compNum++;
-                    if (this._compNum % ECONOMY.BOXES_PER_COIN === 0) {
-                        DataManager.ins.addCoins(1);
-                    }
                     this._events?.onCoinsChanged();
                     this.showFlyGold(boxRef.node);
                     this.showBoxCelebration(boxRef.node, colorId);
@@ -931,9 +899,6 @@ export class LevelController extends Component {
                     slot.active = true;
                     if (box.checkFull()) {
                         this._compNum++;
-                        if (this._compNum % ECONOMY.BOXES_PER_COIN === 0) {
-                            DataManager.ins.addCoins(1);
-                        }
                         this._events?.onCoinsChanged();
                         this.showFlyGold(box.node);
                         this.showBoxCelebration(box.node, cId);
@@ -982,9 +947,6 @@ export class LevelController extends Component {
                 }
                 if (box.checkFull()) {
                     this._compNum++;
-                    if (this._compNum % ECONOMY.BOXES_PER_COIN === 0) {
-                        DataManager.ins.addCoins(1);
-                    }
                     this._events?.onCoinsChanged();
                     this.showFlyGold(box.node);
                     this.showBoxCelebration(box.node, box.colorId);
@@ -1046,13 +1008,8 @@ export class LevelController extends Component {
                     this._isOver = true;
                     DataManager.ins.status = GameStatus.WIN;
                     AudioManager.ins.play(AudioClips.GAME_WIN);
-                    const reward = DataManager.ins.recordWin(DataManager.ins.isDailyMode);
-                    MonetizationManager.ins.trackEvent('level_win', {
-                        isDaily: DataManager.ins.isDailyMode,
-                        coins: reward.coins,
-                        bolts: reward.bolts,
-                        streak: DataManager.ins.winStreak,
-                    });
+                    const reward = DataManager.ins.recordWin();
+                    MonetizationManager.ins.trackEvent('level_win', { bolts: reward.bolts });
                     this._events?.onCoinsChanged();
                     this._events?.onWin();
                 }
@@ -1534,9 +1491,6 @@ export class LevelController extends Component {
         if (DataManager.ins.getSkillCount(skill) > 0) {
             DataManager.ins.consumeSkill(skill);
             execute();
-        } else if (DataManager.ins.spendCoins(ECONOMY.COST_BOOSTER)) {
-            this._events?.onToast(`Booster unlocked (-${ECONOMY.COST_BOOSTER} Coins)`);
-            execute();
         } else {
             MonetizationManager.ins.showRewardedAd('skill_refill', execute);
         }
@@ -1545,23 +1499,13 @@ export class LevelController extends Component {
     public onBoxLockClick(box: TargetBox): void {
         if (DataManager.ins.status !== GameStatus.RUNNING || this._isOver) return;
         if (!box.isLock()) return;
-
-        const doUnlock = (msg: string) => {
+        MonetizationManager.ins.showRewardedAd('unlock_box', () => {
             if (!box.isLock()) return;
             AudioManager.ins.play(AudioClips.SKILL_UNLOCK);
             this.onBoxRefresh(box, -1, true);
             this._events?.onCoinsChanged();
-            this._events?.onToast(msg);
-        };
-
-        // Dual-track: spend Coins first if player has enough, otherwise Rewarded Ad!
-        if (DataManager.ins.spendCoins(ECONOMY.COST_UNLOCK_BOX)) {
-            doUnlock(`Extra box unlocked (-${ECONOMY.COST_UNLOCK_BOX} Coins)`);
-        } else {
-            MonetizationManager.ins.showRewardedAd('unlock_box', () => {
-                doUnlock('Extra box unlocked (AD)!');
-            });
-        }
+            this._events?.onToast('Extra box unlocked!');
+        });
     }
 
     public unlockNextBox(): void {
