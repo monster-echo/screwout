@@ -51,7 +51,7 @@ IOS_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-15.0}"
 IOS_EXTRA_CXXFLAGS='$(inherited) -Wno-error=invalid-specialization -Wno-error=enum-constexpr-conversion -Wno-error=deprecated-declarations -Wno-error=deprecated-non-prototype'
 # GoogleMobileAds is Swift-built but statically linked into an ObjC-only app:
 # the linker needs the Swift static compatibility libs explicitly on the path.
-IOS_EXTRA_LDFLAGS='$(inherited) -L$(TOOLCHAIN_DIR)/usr/lib/swift/static -lswiftCompatibility51 -lswiftCompatibility56 -lswiftCompatibilityConcurrency'
+IOS_EXTRA_LDFLAGS='$(inherited) -L$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) -L$(TOOLCHAIN_DIR)/usr/lib/swift/static -lswiftCompatibility51 -lswiftCompatibility56 -lswiftCompatibilityConcurrency'
 
 eval "$(python3 "$ROOT/tools/set_versions.py" get)"
 VERSION="${VERSION:-$version}"
