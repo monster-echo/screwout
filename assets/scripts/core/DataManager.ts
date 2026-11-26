@@ -1,16 +1,38 @@
 import { sys } from 'cc';
 import { GameStatus, SkillType, TOTAL_LEVELS } from './GameTypes';
 
+export interface SkillInventory {
+    slot: number;
+    clear: number;
+    melt: number;
+}
+
+export interface GalleryProgress {
+    activeArtId: string;
+    filledCounts: Record<string, number>;
+    claimedRewards: string[];
+}
+
 interface SavePayload {
     level: number;
     maxLevel: number;
     coins: number;
+    bolts: number;
+    winStreak: number;
+    bestStreak: number;
+    totalScore: number;
     sound: boolean;
     vibrate: boolean;
     difficultyIndex: number;
+    playerCountry: string;
+    playerName: string;
+    noAdsPurchased: boolean;
+    skillCounts: SkillInventory;
+    dailyCompletedDates: string[];
+    gallery: GalleryProgress;
 }
 
-const STORAGE_KEY = 'screw_out_v3_save';
+const STORAGE_KEY = 'screw_out_overseas_v1';
 
 export class DataManager {
     private static _ins: DataManager | null = null;
@@ -24,10 +46,31 @@ export class DataManager {
 
     public level = 1;           // 1-based level number (maps to lv_0..lv_100)
     public maxLevel = 1;
-    public coins = 100;
+    public coins = 120;
+    public bolts = 20;          // Collected screws currency for Pixel Art Gallery
+    public winStreak = 0;       // Consecutive wins (grants start-of-level buffs)
+    public bestStreak = 0;
+    public totalScore = 0;      // Used for Global & Country Leaderboard
     public soundEnabled = true;
     public vibrateEnabled = true;
     public difficultyIndex = 0;
+    public playerCountry = 'US';
+    public playerName = 'Player';
+    public noAdsPurchased = false;
+
+    public skillCounts: SkillInventory = {
+        slot: 2,
+        clear: 2,
+        melt: 2,
+    };
+
+    public dailyCompletedDates: string[] = [];
+
+    public gallery: GalleryProgress = {
+        activeArtId: 'lucky_cat',
+        filledCounts: {},
+        claimedRewards: [],
+    };
 
     // Runtime state (reset per level)
     public status: GameStatus = GameStatus.MENU;
@@ -35,10 +78,14 @@ export class DataManager {
     public skillIndex: SkillType | -1 = -1;
     public levelProgress = 0;
     public canReviveTime = 3;
+    public isDailyMode = false;
+    public activeDailyDateKey = '';
+    public lastWinCoins = 30;
+    public lastWinBolts = 10;
 
     public load(): void {
         try {
-            const raw = sys.localStorage.getItem(STORAGE_KEY);
+            const raw = sys.localStorage.getItem(STORAGE_KEY) || sys.localStorage.getItem('screw_out_v3_save');
             if (!raw) return;
             const parsed = JSON.parse(raw) as Partial<SavePayload>;
             if (typeof parsed.level === 'number' && parsed.level >= 1) {
@@ -48,9 +95,37 @@ export class DataManager {
                 this.maxLevel = Math.min(TOTAL_LEVELS, Math.max(this.level, Math.floor(parsed.maxLevel)));
             }
             if (typeof parsed.coins === 'number') this.coins = Math.max(0, Math.floor(parsed.coins));
+            if (typeof parsed.bolts === 'number') this.bolts = Math.max(0, Math.floor(parsed.bolts));
+            if (typeof parsed.winStreak === 'number') this.winStreak = Math.max(0, Math.floor(parsed.winStreak));
+            if (typeof parsed.bestStreak === 'number') this.bestStreak = Math.max(this.winStreak, Math.floor(parsed.bestStreak));
+            if (typeof parsed.totalScore === 'number') this.totalScore = Math.max(0, Math.floor(parsed.totalScore));
             if (typeof parsed.sound === 'boolean') this.soundEnabled = parsed.sound;
             if (typeof parsed.vibrate === 'boolean') this.vibrateEnabled = parsed.vibrate;
             if (typeof parsed.difficultyIndex === 'number') this.difficultyIndex = parsed.difficultyIndex;
+            if (typeof parsed.playerCountry === 'string' && parsed.playerCountry.length === 2) {
+                this.playerCountry = parsed.playerCountry;
+            }
+            if (typeof parsed.playerName === 'string' && parsed.playerName.trim().length > 0) {
+                this.playerName = parsed.playerName.trim().slice(0, 14);
+            }
+            if (typeof parsed.noAdsPurchased === 'boolean') this.noAdsPurchased = parsed.noAdsPurchased;
+            if (parsed.skillCounts) {
+                this.skillCounts = {
+                    slot: Math.max(0, Math.floor(parsed.skillCounts.slot ?? 2)),
+                    clear: Math.max(0, Math.floor(parsed.skillCounts.clear ?? 2)),
+                    melt: Math.max(0, Math.floor(parsed.skillCounts.melt ?? 2)),
+                };
+            }
+            if (Array.isArray(parsed.dailyCompletedDates)) {
+                this.dailyCompletedDates = parsed.dailyCompletedDates.filter((d) => typeof d === 'string').slice(-60);
+            }
+            if (parsed.gallery && typeof parsed.gallery === 'object') {
+                this.gallery = {
+                    activeArtId: parsed.gallery.activeArtId || 'lucky_cat',
+                    filledCounts: parsed.gallery.filledCounts || {},
+                    claimedRewards: Array.isArray(parsed.gallery.claimedRewards) ? parsed.gallery.claimedRewards : [],
+                };
+            }
         } catch {
             // Ignore malformed storage
         }
@@ -61,9 +136,19 @@ export class DataManager {
             level: this.level,
             maxLevel: this.maxLevel,
             coins: this.coins,
+            bolts: this.bolts,
+            winStreak: this.winStreak,
+            bestStreak: this.bestStreak,
+            totalScore: this.totalScore,
             sound: this.soundEnabled,
             vibrate: this.vibrateEnabled,
             difficultyIndex: this.difficultyIndex,
+            playerCountry: this.playerCountry,
+            playerName: this.playerName,
+            noAdsPurchased: this.noAdsPurchased,
+            skillCounts: this.skillCounts,
+            dailyCompletedDates: this.dailyCompletedDates,
+            gallery: this.gallery,
         };
         try {
             sys.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -93,15 +178,115 @@ export class DataManager {
     }
 
     public addCoins(amount: number): void {
-        this.coins = Math.max(0, this.coins + amount);
+        this.coins = Math.max(0, this.coins + Math.floor(amount));
         this.save();
+    }
+
+    public spendCoins(amount: number): boolean {
+        if (this.coins < amount) return false;
+        this.coins -= amount;
+        this.save();
+        return true;
+    }
+
+    public addBolts(amount: number): void {
+        this.bolts = Math.max(0, this.bolts + Math.floor(amount));
+        this.save();
+    }
+
+    public spendBolts(amount: number): boolean {
+        if (this.bolts < amount) return false;
+        this.bolts -= amount;
+        this.save();
+        return true;
+    }
+
+    public recordWin(isDaily: boolean): { coins: number; bolts: number; score: number } {
+        this.winStreak += 1;
+        if (this.winStreak > this.bestStreak) {
+            this.bestStreak = this.winStreak;
+        }
+        const streakBonusCoins = Math.min(30, this.winStreak * 5);
+        const coins = (isDaily ? 100 : 30) + streakBonusCoins;
+        const bolts = isDaily ? 20 : 12;
+        const score = (isDaily ? 250 : 100) + this.winStreak * 20;
+
+        this.coins += coins;
+        this.bolts += bolts;
+        this.totalScore += score;
+        this.lastWinCoins = coins;
+        this.lastWinBolts = bolts;
+
+        if (isDaily && this.activeDailyDateKey && !this.dailyCompletedDates.includes(this.activeDailyDateKey)) {
+            this.dailyCompletedDates.push(this.activeDailyDateKey);
+        }
+        this.save();
+        return { coins, bolts, score };
+    }
+
+    public resetWinStreak(): void {
+        if (this.winStreak > 0) {
+            this.winStreak = 0;
+            this.save();
+        }
+    }
+
+    /**
+     * Win Streak Tier Buffs (applied automatically at level start):
+     * - Tier 1 (streak >= 1): +1 Extra Holding Slot unlocked at start
+     * - Tier 2 (streak >= 2): +1 Extra Holding Slot + 1 Free Clear Tray charge
+     * - Tier 3 (streak >= 3): +1 Extra Holding Slot + 3rd Target Box unlocked at start!
+     */
+    public getWinStreakTier(): number {
+        if (this.winStreak >= 3) return 3;
+        if (this.winStreak >= 2) return 2;
+        if (this.winStreak >= 1) return 1;
+        return 0;
+    }
+
+    public getSkillKey(skill: SkillType): keyof SkillInventory | null {
+        if (skill === SkillType.UNLOCK_SLOT) return 'slot';
+        if (skill === SkillType.CLEAR_TRAY) return 'clear';
+        if (skill === SkillType.SMASH_BOARD) return 'melt';
+        return null;
+    }
+
+    public getSkillCount(skill: SkillType): number {
+        const key = this.getSkillKey(skill);
+        return key ? this.skillCounts[key] : 0;
+    }
+
+    public consumeSkill(skill: SkillType): boolean {
+        const key = this.getSkillKey(skill);
+        if (!key || this.skillCounts[key] <= 0) return false;
+        this.skillCounts[key] -= 1;
+        this.save();
+        return true;
+    }
+
+    public addSkill(skill: SkillType, amount: number): void {
+        const key = this.getSkillKey(skill);
+        if (!key) return;
+        this.skillCounts[key] = Math.max(0, this.skillCounts[key] + amount);
+        this.save();
+    }
+
+    public isDailyCompleted(dateKey: string): boolean {
+        return this.dailyCompletedDates.includes(dateKey);
     }
 
     public resetProgress(): void {
         this.level = 1;
         this.maxLevel = 1;
-        this.coins = 100;
+        this.coins = 120;
+        this.bolts = 20;
+        this.winStreak = 0;
+        this.bestStreak = 0;
+        this.totalScore = 0;
         this.difficultyIndex = 0;
+        this.dailyCompletedDates = [];
+        this.skillCounts = { slot: 2, clear: 2, melt: 2 };
+        this.gallery = { activeArtId: 'lucky_cat', filledCounts: {}, claimedRewards: [] };
         this.save();
     }
 }

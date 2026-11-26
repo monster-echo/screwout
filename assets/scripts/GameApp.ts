@@ -3,6 +3,8 @@ import { GameStatus, SkillType } from './core/GameTypes';
 import { DataManager } from './core/DataManager';
 import { AudioManager } from './core/AudioManager';
 import { ResManager } from './core/ResManager';
+import { MonetizationManager } from './core/MonetizationManager';
+import { DailyAndLeaderboardService } from './meta/DailyAndLeaderboard';
 import { LevelController } from './game/LevelController';
 import { UIManager } from './ui/UIManager';
 
@@ -28,7 +30,7 @@ export class GameApp extends Component {
         rootW.top = rootW.bottom = rootW.left = rootW.right = 0;
         rootW.updateAlignment();
 
-        // 1. Original low-poly sky-blue in-game background (42faa229.jpg, full-bleed Widget)
+        // 1. Original low-poly sky-blue in-game background (full-bleed Widget)
         const bgNode = new Node('Backdrop');
         bgNode.setParent(this.node);
         const bgUi = bgNode.addComponent(UITransform);
@@ -36,7 +38,7 @@ export class GameApp extends Component {
         const bgW = bgNode.addComponent(Widget);
         bgW.isAlignTop = bgW.isAlignBottom = bgW.isAlignLeft = bgW.isAlignRight = true;
         bgW.top = bgW.bottom = bgW.left = bgW.right = 0;
-        const bgSf = ResManager.ins.getUiSprite('bg_game_poly') || ResManager.ins.getUiSprite('bg_game');
+        const bgSf = ResManager.ins.getUiSprite('bg_game_poly');
         if (bgSf) {
             const bgSp = bgNode.addComponent(Sprite);
             bgSp.sizeMode = Sprite.SizeMode.CUSTOM;
@@ -48,7 +50,7 @@ export class GameApp extends Component {
             g.fill();
         }
 
-        // 2. Original root_bg white top header panel (pinned to top edge via Widget)
+        // 2. Top frosted white header deck (pinned to top edge via Widget)
         const topPanel = new Node('root_bg');
         topPanel.setParent(this.node);
         const tpUi = topPanel.addComponent(UITransform);
@@ -90,15 +92,45 @@ export class GameApp extends Component {
         const uiNode = new Node('UI');
         uiNode.setParent(this.node);
         this._uiMgr = uiNode.addComponent(UIManager);
+        MonetizationManager.ins.setToastCallback((m) => this._uiMgr?.showToast(m));
+
         this._uiMgr.build({
-            onStartGame: (lv) => this.startLevel(lv),
-            onRestart: () => this.startLevel(DataManager.ins.level),
+            onStartGame: (lv) => this.startLevel(lv, false),
+            onStartDaily: () => {
+                const dateKey = DailyAndLeaderboardService.getTodayDateKey();
+                const dailyLv = DailyAndLeaderboardService.getDailyLevelNumber(dateKey);
+                this.startLevel(dailyLv, true, dateKey);
+            },
+            onRestart: () => {
+                if (DataManager.ins.isDailyMode) {
+                    const dateKey = DataManager.ins.activeDailyDateKey || DailyAndLeaderboardService.getTodayDateKey();
+                    const dailyLv = DailyAndLeaderboardService.getDailyLevelNumber(dateKey);
+                    this.startLevel(dailyLv, true, dateKey);
+                } else {
+                    this.startLevel(DataManager.ins.level, false);
+                }
+            },
+            onGiveUp: () => {
+                DataManager.ins.resetWinStreak();
+                MonetizationManager.ins.maybeShowInterstitial('level_retry');
+                if (DataManager.ins.isDailyMode) {
+                    this.backToMenu();
+                } else {
+                    this.startLevel(DataManager.ins.level, false);
+                }
+            },
             onBackMenu: () => this.backToMenu(),
             onNextLevel: () => {
-                DataManager.ins.advanceLevel();
-                this.startLevel(DataManager.ins.level);
+                MonetizationManager.ins.maybeShowInterstitial('level_win');
+                if (DataManager.ins.isDailyMode) {
+                    this.backToMenu();
+                } else {
+                    DataManager.ins.advanceLevel();
+                    this.startLevel(DataManager.ins.level, false);
+                }
             },
             onRevive: () => {
+                MonetizationManager.ins.trackEvent('streak_saved', { streak: DataManager.ins.winStreak });
                 this._levelCtrl?.revive();
             },
             onUseSkill: (skill: SkillType) => {
@@ -106,20 +138,22 @@ export class GameApp extends Component {
             },
         });
 
-        // Expose read-only state & level switcher for automated browser testing (all moves use real mouse clicks)
+        // Expose read-only state & level switcher for automated browser testing
         (globalThis as any).__SCREW_OUT__ = {
             ready: true,
-            startLevel: (lv: number) => this.startLevel(lv),
+            startLevel: (lv: number) => this.startLevel(lv, false),
             getBestMove: () => this._levelCtrl?.getBestLegalScrewNormalized() || null,
             getState: () => this._levelCtrl?.getDebugState() || { status: DataManager.ins.status },
         };
     }
 
-    private async startLevel(levelNumber: number): Promise<void> {
-        DataManager.ins.level = levelNumber;
-        DataManager.ins.save();
-        this._uiMgr?.showGameHUD();
-        await this._levelCtrl?.startLevel(levelNumber);
+    private async startLevel(levelNumber: number, isDaily: boolean, dailyDateKey = ''): Promise<void> {
+        if (!isDaily) {
+            DataManager.ins.level = levelNumber;
+            DataManager.ins.save();
+        }
+        this._uiMgr?.showGameHUD(isDaily, levelNumber);
+        await this._levelCtrl?.startLevel(levelNumber, isDaily, dailyDateKey);
     }
 
     private backToMenu(): void {

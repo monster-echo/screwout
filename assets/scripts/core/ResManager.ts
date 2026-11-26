@@ -14,7 +14,6 @@ export class ResManager {
     private _boardSprites: Map<string, SpriteFrame> = new Map();
     private _uiSprites: Map<string, SpriteFrame> = new Map();
     private _difficultyConfigs: DifficultyConfig[] = [];
-    private _nailSpine: sp.SkeletonData | null = null;
     private _touchSpine: sp.SkeletonData | null = null;
     private _coreLoaded = false;
 
@@ -23,14 +22,12 @@ export class ResManager {
         await Promise.all([
             this.loadImageDirAsSprites('sprites/games', this._gameSprites),
             this.loadImageDirAsSprites('sprites/boards', this._boardSprites),
-            this.loadImageDirAsSprites('sprites/ui', this._uiSprites),
             this.loadImageDirAsSprites('sprites/ui_orig', this._uiSprites),
             this.loadDifficultyConfig(),
-            this.loadSpineAsset('spine/screw/nail').then((d) => { this._nailSpine = d; }),
             this.loadSpineAsset('spine/touch/touch').then((d) => { this._touchSpine = d; }),
         ]);
         console.log(
-            `[ResManager] loaded games=${this._gameSprites.size}, boards=${this._boardSprites.size}, ui=${this._uiSprites.size}, nailSpine=${!!this._nailSpine}, touchSpine=${!!this._touchSpine}`,
+            `[ResManager] loaded games=${this._gameSprites.size}, boards=${this._boardSprites.size}, ui=${this._uiSprites.size}, touchSpine=${!!this._touchSpine}`,
         );
         this._coreLoaded = true;
     }
@@ -128,10 +125,6 @@ export class ResManager {
         }
         const idx = level <= 6 ? 0 : (Math.random() <= 0.6 ? 1 : Math.min(2, list.length - 1));
         return list[idx] || list[0];
-    }
-
-    public get nailSpine(): sp.SkeletonData | null {
-        return this._nailSpine;
     }
 
     public get touchSpine(): sp.SkeletonData | null {

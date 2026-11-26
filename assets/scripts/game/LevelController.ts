@@ -33,6 +33,7 @@ import {
 import { DataManager } from '../core/DataManager';
 import { AudioManager } from '../core/AudioManager';
 import { ResManager } from '../core/ResManager';
+import { MonetizationManager } from '../core/MonetizationManager';
 import { ScrewNode } from './ScrewNode';
 import { BoardNode } from './BoardNode';
 import { TargetBox } from './TargetBox';
@@ -170,12 +171,16 @@ export class LevelController extends Component {
         this.node.on(Node.EventType.TOUCH_START, this.onTouchStart, this);
     }
 
-    public async startLevel(levelNumber: number): Promise<void> {
+    public async startLevel(levelNumber: number, isDaily = false, dailyDateKey = ''): Promise<void> {
         this.unscheduleAllCallbacks();
         PhysicsSystem2D.instance.enable = false;
         this.configureCollisionMatrix();
 
         DataManager.ins.resetLevelRuntime();
+        DataManager.ins.isDailyMode = isDaily;
+        DataManager.ins.activeDailyDateKey = dailyDateKey;
+        MonetizationManager.ins.trackEvent('level_start', { levelNumber, isDaily });
+
         this._isOver = false;
         this._inputBlocked = false;
         this._screws = [];
@@ -200,12 +205,12 @@ export class LevelController extends Component {
         const fileIdx = ((levelNumber - 1) % 101 + 101) % 101;
         const lvData = await ResManager.ins.loadLevel(fileIdx);
         if (!lvData) {
-            this._events?.onToast(`加载第 ${levelNumber} 关失败`);
+            this._events?.onToast(`Failed to load Level ${levelNumber}`);
             return;
         }
 
         this._totalScrewCount = lvData.totalHoles;
-        if (levelNumber === 1) {
+        if (levelNumber === 1 && !isDaily) {
             this.initLevelOneColors(this._totalScrewCount);
         } else {
             const cfg = ResManager.ins.getDifficultyConfig(levelNumber);
@@ -214,7 +219,34 @@ export class LevelController extends Component {
 
         this.buildBoards(lvData);
         this.initBoxes();
+        this.applyWinStreakBuffs();
         this._events?.onProgressChanged(0);
+    }
+
+    private applyWinStreakBuffs(): void {
+        const tier = DataManager.ins.getWinStreakTier();
+        if (tier <= 0) return;
+
+        // Tier 1+: Unlock 1 extra holding slot automatically at start
+        const bonusSlot = this._trayComp?.unlockOneSlot();
+        if (bonusSlot) {
+            bonusSlot.setScale(Vec3.ZERO);
+            tween(bonusSlot).delay(0.25).to(0.25, { scale: Vec3.ONE }, { easing: 'backOut' }).start();
+        }
+
+        // Tier 3+: Also unlock 3rd Target Box automatically at start
+        if (tier >= 3 && this._rootBoxes) {
+            for (const bNode of this._rootBoxes.children) {
+                const box = bNode.getComponent(TargetBox);
+                if (box && box.node.active && box.isLock()) {
+                    this.onBoxRefresh(box, -1, true);
+                    break;
+                }
+            }
+            this._events?.onToast(`Win Streak x${DataManager.ins.winStreak}! +1 Slot & +1 Box!`);
+        } else {
+            this._events?.onToast(`Win Streak x${DataManager.ins.winStreak}! +1 Extra Slot!`);
+        }
     }
 
     private configureCollisionMatrix(): void {
@@ -1005,7 +1037,13 @@ export class LevelController extends Component {
                     this._isOver = true;
                     DataManager.ins.status = GameStatus.WIN;
                     AudioManager.ins.play(AudioClips.GAME_WIN);
-                    DataManager.ins.addCoins(30);
+                    const reward = DataManager.ins.recordWin(DataManager.ins.isDailyMode);
+                    MonetizationManager.ins.trackEvent('level_win', {
+                        isDaily: DataManager.ins.isDailyMode,
+                        coins: reward.coins,
+                        bolts: reward.bolts,
+                        streak: DataManager.ins.winStreak,
+                    });
                     this._events?.onCoinsChanged();
                     this._events?.onWin();
                 }
@@ -1165,70 +1203,34 @@ export class LevelController extends Component {
         mover.setParent(this._fxLayer);
         mover.setPosition(startLocal);
 
-        const nailData = ResManager.ins.nailSpine;
-        if (nailData) {
-            const spNode = new Node('spine');
-            spNode.setParent(mover);
-            spNode.setPosition(0, 15, 0);
-            spNode.setScale(0.48, 0.48, 1);
-            const sk = spNode.addComponent(sp.Skeleton);
-            sk.premultipliedAlpha = false;
-            sk.skeletonData = nailData;
-            sk.setSkin('default');
-            const outAni = `luosi${colorId}-1`;
-            const idleAni = `luosi${colorId}-idle2`;
-            const inAni = `luosi${colorId}-2`;
+        // 100% original glossy spinning screw unscrew-lift-arc-drop animation
+        const mUi = mover.addComponent(UITransform);
+        mUi.setContentSize(58, 58);
+        const mSp = mover.addComponent(Sprite);
+        mSp.sizeMode = Sprite.SizeMode.CUSTOM;
+        const sf = ResManager.ins.getGameSprite(`gbz_screw${colorId}`);
+        if (sf) mSp.spriteFrame = sf;
+        else mSp.color = new Color().fromHEX(SCREW_FALLBACK_COLORS[colorId] || '#ffffff');
 
-            let finished = false;
-            const finishOnce = () => {
-                if (finished) return;
-                finished = true;
+        const dist = Vec3.distance(startLocal, endLocal);
+        const flyDur = Math.max(0.16, Math.min(0.32, dist / 2400));
+        tween(mover)
+            .to(0.11, {
+                position: new Vec3(startLocal.x, startLocal.y + 28, 0),
+                scale: new Vec3(1.22, 1.22, 1),
+                angle: 180,
+            }, { easing: 'quadOut' })
+            .to(flyDur, {
+                position: endLocal,
+                scale: new Vec3(0.95, 0.95, 1),
+                angle: 360,
+            }, { easing: 'cubicInOut' })
+            .to(0.06, { scale: Vec3.ONE })
+            .call(() => {
                 if (mover.isValid) mover.destroy();
                 onDone();
-            };
-
-            sk.setCompleteListener((entry) => {
-                const name = entry?.animation?.name || '';
-                if (name === outAni) {
-                    sk.setAnimation(0, idleAni, false);
-                    const dist = Vec3.distance(startLocal, endLocal);
-                    const dur = Math.max(0.08, dist / 3000);
-                    tween(mover)
-                        .to(dur, { position: endLocal })
-                        .call(() => {
-                            sk.setAnimation(0, inAni, false);
-                            tween(spNode).to(0.3, { position: Vec3.ZERO }).start();
-                        })
-                        .start();
-                } else if (name === inAni) {
-                    finishOnce();
-                }
-            });
-            sk.setAnimation(0, outAni, false);
-            tween(spNode).to(0.2, { position: new Vec3(0, 29, 0) }).start();
-            // Safety fallback if Spine event doesn't fire
-            this.scheduleOnce(finishOnce, 1.4);
-        } else {
-            // Smooth sprite fallback
-            const mUi = mover.addComponent(UITransform);
-            mUi.setContentSize(54, 54);
-            const mSp = mover.addComponent(Sprite);
-            mSp.sizeMode = Sprite.SizeMode.CUSTOM;
-            const sf = ResManager.ins.getGameSprite(`gbz_screw${colorId}`);
-            if (sf) mSp.spriteFrame = sf;
-            else mSp.color = new Color().fromHEX(SCREW_FALLBACK_COLORS[colorId] || '#ffffff');
-
-            const dist = Vec3.distance(startLocal, endLocal);
-            const dur = Math.max(0.16, dist / 2400);
-            tween(mover)
-                .to(0.1, { position: new Vec3(startLocal.x, startLocal.y + 24, 0), scale: new Vec3(1.15, 1.15, 1) })
-                .to(dur, { position: endLocal, scale: Vec3.ONE }, { easing: 'quadOut' })
-                .call(() => {
-                    mover.destroy();
-                    onDone();
-                })
-                .start();
-        }
+            })
+            .start();
     }
 
     /** Original GbzLvNew.showFlyGold: 3 items fly along a Bezier arc with ±360° spin to c_item (cardboard box) */
@@ -1311,55 +1313,78 @@ export class LevelController extends Component {
     public useSkill(skill: SkillType): void {
         if (DataManager.ins.status !== GameStatus.RUNNING || this._isOver) return;
 
-        if (skill === SkillType.UNLOCK_SLOT) {
-            const newSlot = this._trayComp?.unlockOneSlot();
-            if (!newSlot) {
-                this._events?.onToast('孔位已全部解锁');
-                return;
-            }
-            AudioManager.ins.play(AudioClips.SKILL_UNLOCK);
-            newSlot.setScale(Vec3.ZERO);
-            tween(newSlot).to(0.22, { scale: Vec3.ONE }, { easing: 'backOut' }).start();
-        } else if (skill === SkillType.CLEAR_TRAY) {
-            if (!this._trayComp) return;
-            const screws = this._trayComp.getScrews();
-            if (screws.length === 0) {
-                this._events?.onToast('暂存槽为空');
-                return;
-            }
-            AudioManager.ins.play(AudioClips.SKILL_CLEAR);
-            this._trayComp.clearAllPending();
-            for (const sNode of screws) {
-                const parts = sNode.name.split('_');
-                this._screwRefreshArr.push([Number(parts[0]), Number(parts[1] || 0)]);
-                tween(sNode)
-                    .to(0.2, { scale: Vec3.ZERO })
-                    .call(() => this._trayComp!.resetSingleTarget(sNode))
-                    .start();
-            }
-            this._events?.onToast('已清空暂存槽');
-        } else if (skill === SkillType.SMASH_BOARD) {
-            if (DataManager.ins.isSkill && DataManager.ins.skillIndex === SkillType.SMASH_BOARD) {
-                DataManager.ins.isSkill = false;
-                DataManager.ins.skillIndex = -1;
-                this._events?.onSmashModeChanged(false);
-                return;
-            }
-            DataManager.ins.isSkill = true;
-            DataManager.ins.skillIndex = SkillType.SMASH_BOARD;
-            this._events?.onSmashModeChanged(true);
-            this._events?.onToast('请点击一块挡板将其消除');
-        } else if (skill === SkillType.UNLOCK_BOX) {
+        if (skill === SkillType.UNLOCK_BOX) {
             this.unlockNextBox();
+            return;
+        }
+
+        // Toggle off Smash-board mode without consuming a charge
+        if (skill === SkillType.SMASH_BOARD && DataManager.ins.isSkill && DataManager.ins.skillIndex === SkillType.SMASH_BOARD) {
+            DataManager.ins.isSkill = false;
+            DataManager.ins.skillIndex = -1;
+            this._events?.onSmashModeChanged(false);
+            return;
+        }
+
+        // Validate preconditions before consuming charge or showing Rewarded Ad
+        if (skill === SkillType.UNLOCK_SLOT && !this._trayComp?.canUnlockSlot()) {
+            this._events?.onToast('All holding slots are unlocked!');
+            return;
+        }
+        if (skill === SkillType.CLEAR_TRAY && (!this._trayComp || this._trayComp.getScrews().length === 0)) {
+            this._events?.onToast('Holding tray is empty');
+            return;
+        }
+
+        const execute = () => {
+            if (skill === SkillType.UNLOCK_SLOT) {
+                const newSlot = this._trayComp?.unlockOneSlot();
+                if (!newSlot) return;
+                AudioManager.ins.play(AudioClips.SKILL_UNLOCK);
+                newSlot.setScale(Vec3.ZERO);
+                tween(newSlot).to(0.22, { scale: Vec3.ONE }, { easing: 'backOut' }).start();
+                this._events?.onToast('+1 Holding Slot unlocked!');
+            } else if (skill === SkillType.CLEAR_TRAY) {
+                if (!this._trayComp) return;
+                const screws = this._trayComp.getScrews();
+                if (screws.length === 0) return;
+                AudioManager.ins.play(AudioClips.SKILL_CLEAR);
+                this._trayComp.clearAllPending();
+                for (const sNode of screws) {
+                    const parts = sNode.name.split('_');
+                    this._screwRefreshArr.push([Number(parts[0]), Number(parts[1] || 0)]);
+                    tween(sNode)
+                        .to(0.2, { scale: Vec3.ZERO })
+                        .call(() => this._trayComp!.resetSingleTarget(sNode))
+                        .start();
+                }
+                this._events?.onToast('Holding tray cleared!');
+            } else if (skill === SkillType.SMASH_BOARD) {
+                DataManager.ins.isSkill = true;
+                DataManager.ins.skillIndex = SkillType.SMASH_BOARD;
+                this._events?.onSmashModeChanged(true);
+                this._events?.onToast('Tap any board to melt it!');
+            }
+            this._events?.onCoinsChanged();
+        };
+
+        if (DataManager.ins.getSkillCount(skill) > 0) {
+            DataManager.ins.consumeSkill(skill);
+            execute();
+        } else {
+            MonetizationManager.ins.showRewardedAd('skill_refill', execute);
         }
     }
 
     public onBoxLockClick(box: TargetBox): void {
         if (DataManager.ins.status !== GameStatus.RUNNING || this._isOver) return;
         if (!box.isLock()) return;
-        AudioManager.ins.play(AudioClips.SKILL_UNLOCK);
-        this.onBoxRefresh(box, -1, true);
-        this._events?.onToast('已解锁 1 个目标盒');
+        MonetizationManager.ins.showRewardedAd('unlock_box', () => {
+            if (!box.isLock()) return;
+            AudioManager.ins.play(AudioClips.SKILL_UNLOCK);
+            this.onBoxRefresh(box, -1, true);
+            this._events?.onToast('Extra box unlocked!');
+        });
     }
 
     public unlockNextBox(): void {
@@ -1371,7 +1396,7 @@ export class LevelController extends Component {
                 return;
             }
         }
-        this._events?.onToast('目标盒已全部解锁');
+        this._events?.onToast('All boxes are unlocked!');
     }
 
     public revive(): void {

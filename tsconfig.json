@@ -1,6 +1,7 @@
 {
   "extends": "./temp/tsconfig.cocos.json",
   "compilerOptions": {
+    "lib": ["ES2017", "DOM"],
     "strict": false,
     "noImplicitAny": false,
     "skipLibCheck": true,
