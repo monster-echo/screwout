@@ -1,465 +1,454 @@
 #!/usr/bin/env python3
 """
-Generate 100% original commercial-ready overseas casual art assets for ScrewOut.
-Style: Glossy Candy-Workshop & Frosted Acrylic (supersampled 2x anti-aliased).
-Replaces all sprites in assets/resources/sprites/{games,boards,ui,ui_orig} and spine/touch/touch.png.
+AAA 3D Casual Art Compositor for Screw Jam.
+Takes studio-rendered 3D hero assets from image-generator, performs clean
+border flood-fill alpha matting (preserving interior whites/speculars),
+HSV jewel-tone color grading for all 11 screws/boxes/lids, glossy acrylic
+bevel shading for all 120 board shapes, and generates the 3D threaded
+screw shaft sprite for the upgraded unscrew animation.
 """
-
+import colorsys
 import math
-from pathlib import Path
-from PIL import Image, ImageDraw, ImageFilter, ImageChops
+import os
+from collections import deque
+from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
 
-ROOT = Path("/Users/echo/workspace/CocosGames/ScrewOut/assets/resources")
-GAMES_DIR = ROOT / "sprites/games"
-BOARDS_DIR = ROOT / "sprites/boards"
-UI_DIR = ROOT / "sprites/ui"
-UI_ORIG_DIR = ROOT / "sprites/ui_orig"
-TOUCH_PNG = ROOT / "spine/touch/touch.png"
+ROOT = "/Users/echo/workspace/CocosGames/ScrewOut"
+BRAIN = "/Users/echo/.gemini/antigravity/brain/9d137123-917d-47de-ae09-97bdac13be55"
+GAMES_DIR = os.path.join(ROOT, "assets/resources/sprites/games")
+BOARDS_DIR = os.path.join(ROOT, "assets/resources/sprites/boards")
+UI_ORIG_DIR = os.path.join(ROOT, "assets/resources/sprites/ui_orig")
+TOUCH_PNG = os.path.join(ROOT, "assets/resources/spine/touch/touch.png")
 
-# 10 vibrant, high-contrast colorblind-friendly screw/box colors
-PALETTE = {
-    1: ((239, 68, 68), (185, 28, 28), (254, 165, 165)),     # Ruby Red
-    2: ((249, 115, 22), (194, 65, 12), (253, 186, 116)),    # Tangerine Orange
-    3: ((250, 204, 21), (202, 138, 4), (254, 240, 138)),    # Lemon Yellow
-    4: ((34, 197, 94), (21, 128, 61), (134, 239, 172)),     # Emerald Green
-    5: ((6, 182, 212), (14, 116, 144), (165, 243, 252)),    # Aqua Cyan
-    6: ((59, 130, 246), (29, 78, 216), (147, 197, 253)),    # Cobalt Blue
-    7: ((168, 85, 247), (126, 34, 206), (216, 180, 254)),   # Amethyst Purple
-    8: ((236, 72, 153), (190, 24, 93), (249, 168, 212)),    # Berry Pink
-    9: ((161, 98, 7), (113, 63, 18), (217, 160, 91)),       # Caramel Bronze
-    10: ((100, 116, 139), (51, 65, 85), (203, 213, 225)),   # Titanium Slate
-    11: ((20, 184, 166), (15, 118, 110), (153, 246, 228)),  # Mint Teal
+SRC_BG_MENU = os.path.join(BRAIN, "bg_menu_raw_1795665751395.jpg")
+SRC_BG_GAME = os.path.join(BRAIN, "bg_game_raw_1795665746541.jpg")
+SRC_SCREW_RED = os.path.join(BRAIN, "screw_3d_red_1795665794460.jpg")
+SRC_BOX_RED = os.path.join(BRAIN, "box_3d_red_1795665770693.jpg")
+SRC_WOOD_FRAME = os.path.join(BRAIN, "wood_frame_3d_1795665752966.jpg")
+SRC_PADLOCK = os.path.join(BRAIN, "padlock_3d_1795665769090.jpg")
+SRC_CRATE = os.path.join(BRAIN, "crate_3d_v2_1795665787410.jpg")
+SRC_POTION = os.path.join(BRAIN, "potion_3d_1795665795958.jpg")
+SRC_BROOM = os.path.join(BRAIN, "magic_whisk_broom_icon_1795665792684.jpg")
+SRC_COIN = os.path.join(BRAIN, "golden_star_coin_icon_1795665797558.jpg")
+
+# 11 distinct jewel-tone HSV targets (hue in 0..1, sat_scale, val_scale)
+# Source master is vivid crimson red (hue ~ 0.0 / 0.99)
+COLOR_TARGETS = {
+    0:  (0.60, 0.12, 0.88),  # Machined Silver-Slate (neutral)
+    1:  (0.99, 1.02, 1.02),  # Ruby Red
+    2:  (0.125, 1.05, 1.18), # Sunshine Gold-Yellow
+    3:  (0.37, 0.96, 1.00),  # Emerald Green
+    4:  (0.60, 1.00, 1.02),  # Sapphire Blue
+    5:  (0.77, 0.92, 1.04),  # Royal Amethyst Purple
+    6:  (0.065, 1.05, 1.10), # Tangerine Orange
+    7:  (0.90, 0.95, 1.10),  # Magenta Rose Pink
+    8:  (0.51, 0.96, 1.06),  # Crystal Cyan / Turquoise
+    9:  (0.24, 0.98, 1.10),  # Fresh Lime Green
+    10: (0.04, 0.65, 0.72),  # Warm Bronze / Espresso
 }
 
 
-def draw_screw(color_id: int, size=110) -> Image.Image:
-    S = size * 2
-    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    base, dark, light = PALETTE.get(color_id, PALETTE[1])
-    pad = int(S * 0.06)
-    cx, cy = S // 2, S // 2
-    r = S // 2 - pad
+def flood_remove_white_bg(img: Image.Image, thresh: int = 236, feather: float = 1.0) -> Image.Image:
+    """
+    Removes ONLY the exterior pure-white background by flood-filling from image borders.
+    Interior white highlights, recessed white panels, and glossy speculars are 100% preserved!
+    """
+    im = img.convert("RGBA")
+    w, h = im.size
+    px = im.load()
+    visited = bytearray(w * h)
+    q = deque()
 
-    # Drop shadow
-    d.ellipse([cx - r, cy - r + 8, cx + r, cy + r + 8], fill=(15, 23, 42, 70))
-    # Outer dark metallic rim
-    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=dark)
-    # Main colored dome
-    r2 = int(r * 0.88)
-    d.ellipse([cx - r2, cy - r2 - 2, cx + r2, cy + r2 - 2], fill=base)
-    # Top-left glossy highlight arc
-    r3 = int(r * 0.72)
-    d.ellipse([cx - r3, cy - r3 - 6, cx + r3, cy + r3 - 18], fill=light + (115,))
-    # Inner bright specular dot
-    d.ellipse([cx - int(r * 0.45), cy - int(r * 0.52), cx - int(r * 0.15), cy - int(r * 0.28)], fill=(255, 255, 255, 165))
+    def is_bg(r, g, b):
+        return r >= thresh and g >= thresh and b >= thresh and (max(r, g, b) - min(r, g, b)) <= 22
 
-    # Recessed Phillips cross slot
-    arm = int(r * 0.50)
-    thick = int(r * 0.20)
-    slot_col = (max(0, dark[0] - 40), max(0, dark[1] - 40), max(0, dark[2] - 40), 255)
-    # Cross shadow bevel
-    d.rounded_rectangle([cx - arm, cy - thick // 2 + 3, cx + arm, cy + thick // 2 + 3], radius=thick // 2, fill=(255, 255, 255, 90))
-    d.rounded_rectangle([cx - thick // 2, cy - arm + 3, cx + thick // 2, cy + arm + 3], radius=thick // 2, fill=(255, 255, 255, 90))
-    # Cross recess
-    d.rounded_rectangle([cx - arm, cy - thick // 2, cx + arm, cy + thick // 2], radius=thick // 2, fill=slot_col)
-    d.rounded_rectangle([cx - thick // 2, cy - arm, cx + thick // 2, cy + arm], radius=thick // 2, fill=slot_col)
+    # Seed from all 4 border edges
+    for x in range(w):
+        for y in (0, h - 1):
+            r, g, b, _ = px[x, y]
+            if is_bg(r, g, b):
+                idx = y * w + x
+                if not visited[idx]:
+                    visited[idx] = 1
+                    q.append((x, y))
+    for y in range(h):
+        for x in (0, w - 1):
+            r, g, b, _ = px[x, y]
+            if is_bg(r, g, b):
+                idx = y * w + x
+                if not visited[idx]:
+                    visited[idx] = 1
+                    q.append((x, y))
 
-    return img.resize((size, size), Image.Resampling.LANCZOS)
+    while q:
+        x, y = q.popleft()
+        for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+            if 0 <= nx < w and 0 <= ny < h:
+                idx = ny * w + nx
+                if not visited[idx]:
+                    r, g, b, _ = px[nx, ny]
+                    if is_bg(r, g, b):
+                        visited[idx] = 1
+                        q.append((nx, ny))
 
+    # Build smooth alpha mask
+    alpha = Image.new("L", (w, h), 255)
+    apx = alpha.load()
+    for y in range(h):
+        row_off = y * w
+        for x in range(w):
+            if visited[row_off + x]:
+                apx[x, y] = 0
+                px[x, y] = (0, 0, 0, 0)
 
-def draw_toolbox(color_id: int, w=260, h=343) -> Image.Image:
-    W, H = w * 2, h * 2
-    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    base, dark, light = PALETTE.get(color_id, ((148, 163, 184), (71, 85, 105), (226, 232, 240)))
+    # Soften 1px fringe against white background by slightly eroding & feathering alpha
+    if feather > 0:
+        alpha = alpha.filter(ImageFilter.MinFilter(3))
+        alpha = alpha.filter(ImageFilter.GaussianBlur(feather))
+    im.putalpha(alpha)
 
-    # Top metallic handle
-    d.rounded_rectangle([W * 0.28, 18, W * 0.72, 100], radius=24, fill=dark)
-    d.rounded_rectangle([W * 0.31, 24, W * 0.69, 86], radius=18, fill=base)
-    d.rounded_rectangle([W * 0.37, 50, W * 0.63, 98], radius=10, fill=(0, 0, 0, 0))
-
-    # Main box drop shadow + 3D bottom lip
-    d.rounded_rectangle([24, 96, W - 24, H - 14], radius=44, fill=(15, 23, 42, 45))
-    d.rounded_rectangle([20, 86, W - 20, H - 24], radius=44, fill=dark)
-    # Front colored shell
-    d.rounded_rectangle([20, 74, W - 20, H - 72], radius=44, fill=base)
-    # Top edge gloss
-    d.rounded_rectangle([32, 82, W - 32, 130], radius=24, fill=light + (130,))
-
-    # Inner clean pearl-white tray
-    d.rounded_rectangle([46, 128, W - 46, H - 102], radius=28, fill=(241, 245, 249, 255), outline=dark, width=6)
-
-    # 3 recessed screw sockets (matching TargetBox triangle positions: (0,+14), (-35,-34), (+35,-34) at 156x204 -> scaled to 520x686)
-    scale_x = W / 156.0
-    scale_y = H / 204.0
-    holes = [(0, 14), (-35, -34), (35, -34)]
-    hr = 46
-    for hx, hy in holes:
-        px = W / 2 + hx * scale_x
-        py = H / 2 - hy * scale_y
-        d.ellipse([px - hr - 4, py - hr - 4, px + hr + 4, py + hr + 4], fill=(203, 213, 225, 255))
-        d.ellipse([px - hr, py - hr, px + hr, py + hr], fill=(100, 116, 139, 255))
-        d.ellipse([px - hr + 6, py - hr + 10, px + hr - 6, py + hr - 2], fill=(71, 85, 105, 255))
-
-    return img.resize((w, h), Image.Resampling.LANCZOS)
+    # Crop tightly to non-transparent bounding box with tiny margin
+    bbox = im.getbbox()
+    if bbox:
+        im = im.crop(bbox)
+    return im
 
 
-def draw_cover(color_id: int, w=260, h=282) -> Image.Image:
-    W, H = w * 2, h * 2
-    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    base, dark, light = PALETTE.get(color_id, PALETTE[1])
+def hue_grade_red_master(im: Image.Image, target_h: float, sat_mul: float, val_mul: float,
+                         min_sat_to_shift: float = 0.22) -> Image.Image:
+    """
+    Shifts saturated red/crimson pixels to the target jewel-tone hue while keeping
+    neutral white highlights, silver inner panels, and dark specular reflections pristine.
+    """
+    src = im.convert("RGBA")
+    w, h = src.size
+    out = Image.new("RGBA", (w, h))
+    spx = src.load()
+    opx = out.load()
 
-    # Snug 3D snap-on lid
-    d.rounded_rectangle([18, 40, W - 18, H - 24], radius=44, fill=dark)
-    d.rounded_rectangle([18, 28, W - 18, H - 56], radius=44, fill=base)
-    d.rounded_rectangle([38, 44, W - 38, 120], radius=24, fill=light + (140,))
-    # Center latch clasp
-    d.rounded_rectangle([W * 0.36, H - 96, W * 0.64, H - 16], radius=16, fill=(250, 204, 21, 255), outline=(161, 98, 7, 255), width=6)
-    return img.resize((w, h), Image.Resampling.LANCZOS)
-
-
-def draw_locked_box(w=177, h=230) -> Image.Image:
-    W, H = w * 2, h * 2
-    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    # Frosted teal-mint locked crate with golden padlock
-    d.rounded_rectangle([W * 0.28, 12, W * 0.72, 68], radius=18, fill=(13, 148, 136, 255))
-    d.rounded_rectangle([14, 52, W - 14, H - 14], radius=34, fill=(15, 118, 110, 255))
-    d.rounded_rectangle([14, 42, W - 14, H - 38], radius=34, fill=(45, 212, 191, 255))
-    d.rounded_rectangle([26, 52, W - 26, 94], radius=18, fill=(153, 246, 228, 150))
-
-    # Golden padlock in center
-    cx, cy = W // 2, H // 2 + 12
-    # Shackle
-    d.arc([cx - 46, cy - 92, cx + 46, cy + 4], 180, 360, fill=(254, 240, 138, 255), width=16)
-    # Lock body
-    d.rounded_rectangle([cx - 60, cy - 38, cx + 60, cy + 56], radius=20, fill=(217, 119, 6, 255))
-    d.rounded_rectangle([cx - 60, cy - 46, cx + 60, cy + 46], radius=20, fill=(250, 204, 21, 255))
-    # Keyhole
-    d.ellipse([cx - 14, cy - 16, cx + 14, cy + 12], fill=(120, 53, 15, 255))
-    d.polygon([(cx - 8, cy + 4), (cx + 8, cy + 4), (cx + 12, cy + 30), (cx - 12, cy + 30)], fill=(120, 53, 15, 255))
-    # Small "+BOX" plus badge at top right
-    d.ellipse([W - 92, 54, W - 24, 122], fill=(34, 197, 94, 255), outline=(255, 255, 255, 255), width=6)
-    d.rounded_rectangle([W - 76, 82, W - 40, 94], radius=4, fill=(255, 255, 255, 255))
-    d.rounded_rectangle([W - 64, 70, W - 52, 106], radius=4, fill=(255, 255, 255, 255))
-    return img.resize((w, h), Image.Resampling.LANCZOS)
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = spx[x, y]
+            if a == 0:
+                opx[x, y] = (0, 0, 0, 0)
+                continue
+            rf, gf, bf = r / 255.0, g / 255.0, b / 255.0
+            hh, ss, vv = colorsys.rgb_to_hsv(rf, gf, bf)
+            # Only shift pixels that actually have red/warm saturation (preserve neutral whites/silvers)
+            if ss >= min_sat_to_shift:
+                # Smooth blend factor near threshold to prevent harsh edges
+                blend = min(1.0, (ss - min_sat_to_shift) / 0.18)
+                new_s = min(1.0, ss * (1.0 - blend + blend * sat_mul))
+                new_v = min(1.0, vv * (1.0 - blend + blend * val_mul))
+                # Shift hue toward target_h
+                nr, ng, nb = colorsys.hsv_to_rgb(target_h, new_s, new_v)
+                r2 = int((rf * (1.0 - blend) + nr * blend) * 255)
+                g2 = int((gf * (1.0 - blend) + ng * blend) * 255)
+                b2 = int((bf * (1.0 - blend) + nb * blend) * 255)
+                opx[x, y] = (max(0, min(255, r2)), max(0, min(255, g2)), max(0, min(255, b2)), a)
+            else:
+                opx[x, y] = (r, g, b, a)
+    return out
 
 
-def draw_hole(size=64, outer_col=(203, 213, 225), inner_col=(100, 116, 139)) -> Image.Image:
-    S = size * 2
-    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    cx, cy = S // 2, S // 2
-    r = S // 2 - 4
-    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=outer_col + (255,))
-    r2 = int(r * 0.80)
-    d.ellipse([cx - r2, cy - r2, cx + r2, cy + r2], fill=inner_col + (255,))
-    r3 = int(r * 0.68)
-    d.ellipse([cx - r3, cy - r3 + 4, cx + r3, cy + r3 + 4], fill=(71, 85, 105, 255))
-    return img.resize((size, size), Image.Resampling.LANCZOS)
+def make_3d_screws():
+    raw = Image.open(SRC_SCREW_RED)
+    # Remove white background cleanly
+    cut = flood_remove_white_bg(raw, thresh=232, feather=0.8)
+    # Make square centered with crisp circular trim so rotation never clips
+    side = max(cut.width, cut.height)
+    sq = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    sq.paste(cut, ((side - cut.width) // 2, (side - cut.height) // 2), cut)
+    master = sq.resize((128, 128), Image.Resampling.LANCZOS)
+
+    # Apply tiny soft drop-shadow behind each screw for depth on acrylic boards
+    for idx, (th, sm, vm) in COLOR_TARGETS.items():
+        graded = hue_grade_red_master(master, th, sm, vm, min_sat_to_shift=0.14)
+        canvas = Image.new("RGBA", (116, 116), (0, 0, 0, 0))
+        scaled = graded.resize((104, 104), Image.Resampling.LANCZOS)
+        # Soft contact shadow
+        sh = Image.new("RGBA", (116, 116), (0, 0, 0, 0))
+        sd = ImageDraw.Draw(sh)
+        sd.ellipse([8, 10, 108, 110], fill=(15, 23, 42, 75))
+        sh = sh.filter(ImageFilter.GaussianBlur(3.2))
+        canvas.alpha_composite(sh)
+        canvas.alpha_composite(scaled, (6, 4))
+        canvas.save(os.path.join(GAMES_DIR, f"gbz_screw{idx}.png"))
+
+    # Also build a crisp 3D metallic threaded screw shaft for the 3D unscrew animation!
+    shaft = Image.new("RGBA", (44, 110), (0, 0, 0, 0))
+    d = ImageDraw.Draw(shaft)
+    # Tapered metallic cylinder
+    for y in range(4, 102):
+        t = (y - 4) / 98.0
+        half_w = 13.5 * (1.0 - 0.18 * (t ** 2.2))
+        if y > 90:
+            half_w *= max(0.15, (102 - y) / 12.0)
+        x0 = int(22 - half_w)
+        x1 = int(22 + half_w)
+        for x in range(x0, x1 + 1):
+            u = (x - x0) / max(1, (x1 - x0))
+            # Metallic cylindrical specular shading (bright left-center highlight)
+            cyl = 0.42 + 0.58 * math.exp(-((u - 0.34) / 0.24) ** 2) - 0.18 * ((u - 0.5) ** 2)
+            # Helical thread ridges!
+            ridge = math.sin((y * 0.52) + u * 2.2)
+            lum = int(max(45, min(252, (168 + 44 * ridge) * cyl)))
+            shaft.putpixel((x, y), (lum, min(255, int(lum * 1.02)), min(255, int(lum * 1.08)), 255))
+    shaft.save(os.path.join(GAMES_DIR, "screw_shaft.png"))
 
 
-def reskin_board_png(path: Path):
-    """Re-render every board sprite from its alpha silhouette into a fresh frosted-acrylic / glossy-bezel look."""
-    with Image.open(path) as src:
-        src = src.convert("RGBA")
-        w, h = src.size
-        alpha = src.getchannel("A")
-        # Determine if this is an outer outline frame (hollow center) or solid fill shape
-        # Sample average alpha ratio
-        hist = alpha.histogram()
-        opaque_px = sum(hist[128:])
-        total_px = max(1, w * h)
-        # Measure interior fill ratio via bounding box
-        bb = alpha.getbbox()
-        if not bb:
-            return
-        bw = max(1, bb[2] - bb[0])
-        bh = max(1, bb[3] - bb[1])
-        fill_ratio = opaque_px / (bw * bh)
+def draw_3d_socket_hole(size: int) -> Image.Image:
+    """Machined 3D metallic recessed screw hole with inner depth shadow & bright rim."""
+    im = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    # Outer metallic bevel ring
+    d.ellipse([1, 1, size - 2, size - 2], fill=(215, 224, 236, 255), outline=(148, 163, 184, 255), width=2)
+    # Inner deep recess
+    m = max(4, size // 7)
+    d.ellipse([m, m, size - m, size - m], fill=(42, 52, 68, 255))
+    # Subtle top inner shadow + bottom rim light
+    d.arc([m, m, size - m, size - m], start=190, end=350, fill=(18, 24, 36, 220), width=max(2, size // 16))
+    d.arc([m, m, size - m, size - m], start=20, end=160, fill=(100, 116, 139, 180), width=max(1, size // 22))
+    return im
 
-        # Fresh crisp silhouette mask
-        mask = alpha.point(lambda a: 255 if a > 96 else 0)
-        soft_mask = alpha.point(lambda a: min(255, int(a * 1.15)))
 
-        if fill_ratio < 0.28:
-            # Outer white metallic-glass bezel frame
+def make_3d_boxes_and_lids():
+    raw_box = Image.open(SRC_BOX_RED)
+    cut_box = flood_remove_white_bg(raw_box, thresh=232, feather=0.9)
+    # Resize to 164x212 (exact TargetBox aspect ratio)
+    box_master = cut_box.resize((164, 212), Image.Resampling.LANCZOS)
+
+    # Recessed 3D screw sockets for the 3-hole triangle inside TargetBox
+    hole_sm = draw_3d_socket_hole(34)
+    # Exact positions aligned with TargetBox.ts (holes at (0, 26), (-36, -24), (36, -24) around center (82, 112))
+    hole_positions = [(82 - 17, 94 - 17), (46 - 17, 144 - 17), (118 - 17, 144 - 17)]
+
+    for idx, (th, sm, vm) in COLOR_TARGETS.items():
+        graded = hue_grade_red_master(box_master, th, sm, vm, min_sat_to_shift=0.26)
+        # Paste the 3 machined 3D screw sockets onto the clean inner silver-white tray
+        with_holes = graded.copy()
+        for hx, hy in hole_positions:
+            with_holes.alpha_composite(hole_sm, (hx, hy))
+        with_holes.save(os.path.join(GAMES_DIR, f"gbz_box{idx}.png"))
+
+        # Generate matching glossy 3D lid (gbz_cover1..10) that snaps smoothly over the tray
+        if idx >= 1:
+            lid = Image.new("RGBA", (164, 212), (0, 0, 0, 0))
+            # Build solid glossy tinted acrylic lid with specular highlight & latch
+            # Sample the box's main body color from top rim
+            rim_px = graded.getpixel((82, 42))
+            rr, gg, bb = rim_px[0], rim_px[1], rim_px[2]
+            d = ImageDraw.Draw(lid)
+            d.rounded_rectangle([12, 34, 152, 198], radius=24, fill=(rr, gg, bb, 245),
+                                outline=(min(255, rr + 50), min(255, gg + 50), min(255, bb + 50), 255), width=3)
+            # Glossy diagonal glass sheen across lid
+            sheen = Image.new("RGBA", (164, 212), (0, 0, 0, 0))
+            sd = ImageDraw.Draw(sheen)
+            sd.rounded_rectangle([20, 42, 144, 108], radius=18, fill=(255, 255, 255, 78))
+            sd.rounded_rectangle([54, 166, 110, 184], radius=9, fill=(255, 255, 255, 110))
+            lid.alpha_composite(sheen)
+            lid.save(os.path.join(GAMES_DIR, f"gbz_cover{idx}.png"))
+
+    # Locked box (mint-teal 3D toolbox + AAA 3D golden padlock!)
+    raw_lock = Image.open(SRC_PADLOCK)
+    cut_lock = flood_remove_white_bg(raw_lock, thresh=232, feather=0.9)
+    lock_icon = cut_lock.resize((88, 100), Image.Resampling.LANCZOS)
+
+    locked_box = hue_grade_red_master(box_master, 0.46, 0.72, 1.05, min_sat_to_shift=0.26)
+    # Softly tint inner panel mint-frost so the golden padlock pops
+    tint = Image.new("RGBA", (164, 212), (0, 0, 0, 0))
+    td = ImageDraw.Draw(tint)
+    td.rounded_rectangle([22, 54, 142, 184], radius=16, fill=(100, 224, 198, 145))
+    locked_box.alpha_composite(tint)
+    # Add soft shadow under padlock + composite 3D golden padlock
+    locked_box.alpha_composite(lock_icon, ((164 - 88) // 2, 68))
+    # Small crisp green '+' badge in upper-right corner
+    bd = ImageDraw.Draw(locked_box)
+    bd.ellipse([122, 32, 156, 66], fill=(34, 197, 94, 255), outline=(255, 255, 255, 255), width=3)
+    bd.rectangle([136, 40, 142, 58], fill=(255, 255, 255, 255))
+    bd.rectangle([130, 46, 148, 52], fill=(255, 255, 255, 255))
+    locked_box.save(os.path.join(UI_ORIG_DIR, "解锁盒子.png"))
+
+    # Holding tray hole & screw core
+    hole_big = draw_3d_socket_hole(72)
+    hole_big.save(os.path.join(GAMES_DIR, "hole.png"))
+    hole_core = draw_3d_socket_hole(96)
+    hole_core.save(os.path.join(UI_ORIG_DIR, "gbz_screw_core.png"))
+    hole_core.save(os.path.join(GAMES_DIR, "gbz_screw_core.png"))
+
+
+def make_glossy_acrylic_boards():
+    """
+    Upgrades all 120 board fill & frame silhouettes with real translucent
+    beveled acrylic/crystal glass shading (crisp rim, diagonal sheen, soft depth).
+    """
+    count = 0
+    for fname in os.listdir(BOARDS_DIR):
+        if not fname.endswith(".png"):
+            continue
+        fpath = os.path.join(BOARDS_DIR, fname)
+        im = Image.open(fpath).convert("RGBA")
+        w, h = im.size
+        alpha = im.split()[3]
+        is_frame = ("_1." in fname) or ("frame" in fname.lower())
+
+        if is_frame:
+            # Crisp glossy white/frosted acrylic outer rim with subtle depth
             out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            # Outer subtle slate contour
-            eroded = mask.filter(ImageFilter.MinFilter(3))
-            rim = ImageChops.subtract(mask, eroded)
-            white_layer = Image.new("RGBA", (w, h), (255, 255, 255, 255))
-            contour_layer = Image.new("RGBA", (w, h), (148, 163, 184, 255))
-            out.paste(white_layer, (0, 0), soft_mask)
-            out.paste(contour_layer, (0, 0), rim)
-            out.save(path)
+            grad = Image.new("RGBA", (w, h), (255, 255, 255, 255))
+            gd = ImageDraw.Draw(grad)
+            for y in range(h):
+                t = y / max(1, h - 1)
+                v = int(255 - 24 * t)
+                gd.line([(0, y), (w, y)], fill=(v, min(255, v + 3), min(255, v + 8), 255))
+            out.paste(grad, (0, 0), alpha)
+            out.save(fpath)
         else:
-            # Solid acrylic interior board (white base so Cocos Sprite.color tints it cleanly!)
-            out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            base = Image.new("RGBA", (w, h), (245, 248, 255, 255))
-            # Add subtle diagonal glass gloss band
+            # Translucent glossy crystal slab (tinted at runtime by Cocos Sprite.color)
+            # We bake rich lighting (top-left bright specular, diagonal sheen, bottom depth) into white-base RGB!
+            base = Image.new("RGBA", (w, h), (255, 255, 255, 255))
+            bd = ImageDraw.Draw(base)
+            for y in range(h):
+                t = y / max(1, h - 1)
+                # Subtle top-bright to bottom-deep vertical studio gradient
+                lum = int(252 - 42 * t)
+                bd.line([(0, y), (w, y)], fill=(lum, lum, min(255, lum + 5), 255))
+
+            # Diagonal soft glass reflection streak
             sheen = Image.new("RGBA", (w, h), (0, 0, 0, 0))
             sd = ImageDraw.Draw(sheen)
-            sd.polygon([(0, int(h * 0.15)), (int(w * 0.65), 0), (w, 0), (0, int(h * 0.55))], fill=(255, 255, 255, 55))
-            sd.polygon([(int(w * 0.35), h), (w, int(h * 0.45)), (w, int(h * 0.72)), (int(w * 0.62), h)], fill=(255, 255, 255, 35))
-            # Subtle inner edge highlight
-            eroded = mask.filter(ImageFilter.MinFilter(5))
-            inner_rim = ImageChops.subtract(mask, eroded)
-            rim_layer = Image.new("RGBA", (w, h), (255, 255, 255, 110))
-            combined = Image.alpha_composite(base, sheen)
-            combined = Image.alpha_composite(combined, Image.composite(rim_layer, Image.new("RGBA", (w, h), (0, 0, 0, 0)), inner_rim))
-            out.paste(combined, (0, 0), soft_mask)
-            out.save(path)
+            sd.polygon([
+                (int(w * 0.05), 0), (int(w * 0.38), 0),
+                (0, int(h * 0.42)), (0, int(h * 0.12))
+            ], fill=(255, 255, 255, 95))
+            sd.polygon([
+                (int(w * 0.48), 0), (int(w * 0.60), 0),
+                (int(w * 0.08), int(h * 0.56)), (0, int(h * 0.48))
+            ], fill=(255, 255, 255, 55))
+            sheen = sheen.filter(ImageFilter.GaussianBlur(4))
+            base.alpha_composite(sheen)
+
+            # Inner beveled rim highlight (erode alpha to find edge)
+            eroded = alpha.filter(ImageFilter.MinFilter(5))
+            apx = alpha.load()
+            epx = eroded.load()
+            bpx = base.load()
+            for y in range(h):
+                for x in range(w):
+                    a = apx[x, y]
+                    if a == 0:
+                        bpx[x, y] = (0, 0, 0, 0)
+                    elif epx[x, y] < a:
+                        # Crisp glowing glass edge
+                        bpx[x, y] = (255, 255, 255, a)
+                    else:
+                        r, g, b, _ = bpx[x, y]
+                        bpx[x, y] = (r, g, b, a)
+            base.save(fpath)
+        count += 1
+    return count
 
 
-def draw_backgrounds():
-    # 1. Overseas warm sky-blue to mint workshop menu backdrop
-    W, H = 750, 1334
-    menu_bg = Image.new("RGBA", (W, H), (0, 0, 0, 255))
-    d = ImageDraw.Draw(menu_bg)
-    for y in range(H):
-        t = y / H
-        r = int(56 + (165 - 56) * t)
-        g = int(189 + (243 - 189) * t)
-        b = int(248 + (252 - 248) * t)
-        d.line([(0, y), (W, y)], fill=(r, g, b, 255))
-    # Subtle workshop hex nut pattern
-    pat = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    pd = ImageDraw.Draw(pat)
-    for row in range(-1, 14):
-        for col in range(-1, 8):
-            cx = col * 130 + (65 if row % 2 else 0)
-            cy = row * 115
-            pts = [(cx + 28 * math.cos(math.radians(60 * k)), cy + 28 * math.sin(math.radians(60 * k))) for k in range(6)]
-            pd.polygon(pts, fill=(255, 255, 255, 24))
-            pd.ellipse([cx - 11, cy - 11, cx + 11, cy + 11], fill=(56, 189, 248, 35))
-    menu_bg = Image.alpha_composite(menu_bg, pat)
-    menu_bg.save(UI_ORIG_DIR / "bg_menu_hex.png")
+def make_3d_ui_and_backgrounds():
+    # 1. Sunlit Bokeh Home Menu Background
+    bg_menu = Image.open(SRC_BG_MENU).convert("RGB").resize((750, 1334), Image.Resampling.LANCZOS)
+    bg_menu.save(os.path.join(UI_ORIG_DIR, "bg_menu_hex.png"))
 
-    # 2. Clean soft pastel sky-blue faceted playfield background
-    game_bg = Image.new("RGB", (W, H), (168, 218, 252))
-    gd = ImageDraw.Draw(game_bg)
-    for y in range(H):
-        t = y / H
-        r = int(172 + (212 - 172) * t)
-        g = int(218 + (236 - 218) * t)
-        b = int(252 + (255 - 252) * t)
-        gd.line([(0, y), (W, y)], fill=(r, g, b))
-    # Subtle geometric facets
-    facets = [
-        ([(0, 420), (420, 620), (0, 920)], (188, 228, 254)),
-        ([(750, 380), (380, 680), (750, 980)], (182, 224, 252)),
-        ([(120, 920), (620, 820), (750, 1334), (0, 1334)], (196, 232, 254)),
-    ]
-    for pts, col in facets:
-        gd.polygon(pts, fill=col)
-    game_bg.save(UI_ORIG_DIR / "bg_game_poly.jpg", quality=92)
+    # 2. Clean Studio Playfield Background
+    bg_game = Image.open(SRC_BG_GAME).convert("RGB").resize((750, 1334), Image.Resampling.LANCZOS)
+    bg_game.save(os.path.join(UI_ORIG_DIR, "bg_game_poly.jpg"), quality=94)
 
+    # 3. 3D Handcrafted Oak Wooden Frame
+    wf_raw = Image.open(SRC_WOOD_FRAME)
+    wf_cut = flood_remove_white_bg(wf_raw, thresh=236, feather=0.9)
+    wf_cut.resize((520, 520), Image.Resampling.LANCZOS).save(os.path.join(UI_ORIG_DIR, "wood_frame.png"))
 
-def draw_ui_sprites():
-    # Top white frosted header panel (frame.png)
-    W, H = 750, 420
-    fr = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    fd = ImageDraw.Draw(fr)
-    fd.rounded_rectangle([0, -40, W, H - 8], radius=40, fill=(203, 213, 225, 255))
-    fd.rounded_rectangle([0, -40, W, H - 18], radius=40, fill=(248, 250, 252, 255))
-    fr.save(GAMES_DIR / "frame.png")
+    # 4. 3D Cardboard Shipping Crate (xzx.png)
+    crate_raw = Image.open(SRC_CRATE)
+    crate_cut = flood_remove_white_bg(crate_raw, thresh=234, feather=0.9)
+    crate_cut.resize((128, 108), Image.Resampling.LANCZOS).save(os.path.join(UI_ORIG_DIR, "xzx.png"))
 
-    # Pause button (btn_pause.png)
-    S = 160
-    im = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.ellipse([8, 12, S - 8, S - 4], fill=(29, 78, 216, 255))
-    d.ellipse([8, 4, S - 8, S - 12], fill=(59, 130, 246, 255))
-    d.ellipse([20, 12, S - 20, S // 2 + 8], fill=(147, 197, 253, 120))
-    d.rounded_rectangle([50, 44, 70, 108], radius=8, fill=(255, 255, 255, 255))
-    d.rounded_rectangle([90, 44, 110, 108], radius=8, fill=(255, 255, 255, 255))
-    im.resize((82, 82), Image.Resampling.LANCZOS).save(UI_ORIG_DIR / "btn_pause.png")
+    # 5. 3D Magic Broom (Clear Tray icon - UI_icon3.png)
+    broom_raw = Image.open(SRC_BROOM)
+    broom_cut = flood_remove_white_bg(broom_raw, thresh=234, feather=0.9)
+    broom_cut.resize((128, 128), Image.Resampling.LANCZOS).save(os.path.join(UI_ORIG_DIR, "UI_icon3.png"))
 
-    # Settings gear button (UI_icon_setting.png)
-    im = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.ellipse([8, 12, S - 8, S - 4], fill=(15, 118, 110, 255))
-    d.ellipse([8, 4, S - 8, S - 12], fill=(20, 184, 166, 255))
-    d.ellipse([20, 12, S - 20, S // 2 + 8], fill=(153, 246, 228, 120))
-    cx, cy = S // 2, S // 2 - 4
-    for k in range(8):
-        ang = math.radians(k * 45)
-        gx, gy = cx + 34 * math.cos(ang), cy + 34 * math.sin(ang)
-        d.ellipse([gx - 12, gy - 12, gx + 12, gy + 12], fill=(255, 255, 255, 255))
-    d.ellipse([cx - 32, cy - 32, cx + 32, cy + 32], fill=(255, 255, 255, 255))
-    d.ellipse([cx - 14, cy - 14, cx + 14, cy + 14], fill=(20, 184, 166, 255))
-    im.resize((94, 94), Image.Resampling.LANCZOS).save(UI_ORIG_DIR / "UI_icon_setting.png")
+    # 6. 3D Magic Potion Flask (Melt Board icon - UI_icon2.png)
+    pot_raw = Image.open(SRC_POTION)
+    pot_cut = flood_remove_white_bg(pot_raw, thresh=234, feather=0.9)
+    pot_cut.resize((128, 128), Image.Resampling.LANCZOS).save(os.path.join(UI_ORIG_DIR, "UI_icon2.png"))
 
-    # Close button (btn_close.png)
-    im = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.ellipse([8, 12, S - 8, S - 4], fill=(185, 28, 28, 255))
-    d.ellipse([8, 4, S - 8, S - 12], fill=(239, 68, 68, 255))
-    d.line([(50, 48), (110, 108)], fill=(255, 255, 255, 255), width=16)
-    d.line([(110, 48), (50, 108)], fill=(255, 255, 255, 255), width=16)
-    im.resize((68, 68), Image.Resampling.LANCZOS).save(UI_ORIG_DIR / "btn_close.png")
+    # 7. 3D Golden Star Coin (flyGold.png)
+    coin_raw = Image.open(SRC_COIN)
+    coin_cut = flood_remove_white_bg(coin_raw, thresh=234, feather=0.9)
+    coin_cut.resize((96, 96), Image.Resampling.LANCZOS).save(os.path.join(UI_ORIG_DIR, "flyGold.png"))
 
-    # Level pill (倒计时关数框.png)
-    pw, ph = 253, 47
-    im = Image.new("RGBA", (pw * 2, ph * 2), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.rounded_rectangle([4, 4, pw * 2 - 4, ph * 2 - 4], radius=ph - 4, fill=(30, 41, 59, 235))
-    im.resize((pw, ph), Image.Resampling.LANCZOS).save(UI_ORIG_DIR / "倒计时关数框.png")
+    # 8. Rich Glossy 3D Pill Play Button (按键1.png)
+    play = Image.new("RGBA", (420, 128), (0, 0, 0, 0))
+    d = ImageDraw.Draw(play)
+    # Bottom 3D lip shadow
+    d.rounded_rectangle([6, 14, 414, 124], radius=55, fill=(14, 118, 56, 255))
+    # Main emerald gradient body
+    body = Image.new("RGBA", (420, 128), (0, 0, 0, 0))
+    bd = ImageDraw.Draw(body)
+    for y in range(6, 112):
+        t = (y - 6) / 106.0
+        r = int(74 - 50 * t)
+        g = int(234 - 66 * t)
+        b = int(112 - 42 * t)
+        bd.line([(0, y), (420, y)], fill=(r, g, b, 255))
+    mask = Image.new("L", (420, 128), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([8, 6, 412, 112], radius=52, fill=255)
+    play.paste(body, (0, 0), mask)
+    # Bright glossy specular pill highlight on top
+    spec = Image.new("RGBA", (420, 128), (0, 0, 0, 0))
+    ImageDraw.Draw(spec).rounded_rectangle([28, 12, 392, 54], radius=21, fill=(255, 255, 255, 92))
+    play.alpha_composite(spec)
+    # Crisp white outer bevel stroke
+    d.rounded_rectangle([8, 6, 412, 112], radius=52, outline=(255, 255, 255, 210), width=4)
+    play.save(os.path.join(UI_ORIG_DIR, "按键1.png"))
 
-    # Skill button 3D sky-blue base (skill_btn_bg.png: 281x207)
-    bw, bh = 281, 207
-    im = Image.new("RGBA", (bw * 2, bh * 2), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.rounded_rectangle([10, 22, bw * 2 - 10, bh * 2 - 6], radius=48, fill=(2, 132, 199, 255))
-    d.rounded_rectangle([10, 8, bw * 2 - 10, bh * 2 - 24], radius=48, fill=(56, 189, 248, 255), outline=(12, 74, 110, 255), width=8)
-    d.rounded_rectangle([28, 20, bw * 2 - 28, 86], radius=24, fill=(186, 230, 253, 140))
-    im.resize((bw, bh), Image.Resampling.LANCZOS).save(UI_ORIG_DIR / "skill_btn_bg.png")
+    # 9. Rich Glossy 3D Sapphire Skill Button Base (skill_btn_bg.png, 281x207)
+    sbtn = Image.new("RGBA", (281, 207), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(sbtn)
+    sd.rounded_rectangle([6, 16, 275, 203], radius=34, fill=(23, 78, 166, 255))
+    sbody = Image.new("RGBA", (281, 207), (0, 0, 0, 0))
+    sbd = ImageDraw.Draw(sbody)
+    for y in range(6, 188):
+        t = (y - 6) / 182.0
+        r = int(96 - 58 * t)
+        g = int(188 - 64 * t)
+        b = int(255 - 20 * t)
+        sbd.line([(0, y), (281, y)], fill=(r, g, b, 255))
+    smask = Image.new("L", (281, 207), 0)
+    ImageDraw.Draw(smask).rounded_rectangle([8, 6, 273, 188], radius=32, fill=255)
+    sbtn.paste(sbody, (0, 0), smask)
+    sspec = Image.new("RGBA", (281, 207), (0, 0, 0, 0))
+    ImageDraw.Draw(sspec).rounded_rectangle([22, 14, 259, 86], radius=22, fill=(255, 255, 255, 76))
+    sbtn.alpha_composite(sspec)
+    sd.rounded_rectangle([8, 6, 273, 188], radius=32, outline=(255, 255, 255, 215), width=4)
+    sbtn.save(os.path.join(UI_ORIG_DIR, "skill_btn_bg.png"))
 
-    # Skill plus badge (skill_plus.png: 88x88)
-    im = Image.new("RGBA", (176, 176), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.ellipse([10, 14, 166, 170], fill=(21, 128, 61, 255))
-    d.ellipse([10, 6, 166, 162], fill=(74, 222, 128, 255), outline=(255, 255, 255, 255), width=10)
-    d.rounded_rectangle([48, 72, 128, 96], radius=10, fill=(255, 255, 255, 255))
-    d.rounded_rectangle([76, 44, 100, 124], radius=10, fill=(255, 255, 255, 255))
-    im.resize((88, 88), Image.Resampling.LANCZOS).save(UI_ORIG_DIR / "skill_plus.png")
-
-    # Skill icon: Broom / Clear (UI_icon3.png: 244x273)
-    im = Image.new("RGBA", (244, 273), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    # Handle
-    d.line([(65, 45), (150, 150)], fill=(180, 83, 9, 255), width=26)
-    d.line([(65, 45), (150, 150)], fill=(245, 158, 11, 255), width=16)
-    # Bristle head
-    d.polygon([(115, 155), (185, 115), (225, 215), (145, 248)], fill=(250, 204, 21, 255), outline=(146, 64, 14, 255))
-    d.line([(128, 148), (178, 122)], fill=(239, 68, 68, 255), width=16)
-    im.save(UI_ORIG_DIR / "UI_icon3.png")
-
-    # Skill icon: Hammer / Melt Beaker (UI_icon2.png: 235x243)
-    im = Image.new("RGBA", (235, 243), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    # Glowing emerald potion flask
-    d.rounded_rectangle([84, 26, 151, 56], radius=10, fill=(203, 213, 225, 255), outline=(51, 65, 85, 255), width=6)
-    d.polygon([(94, 56), (141, 56), (200, 198), (35, 198)], fill=(226, 232, 240, 220), outline=(51, 65, 85, 255))
-    d.polygon([(66, 126), (169, 126), (194, 194), (41, 194)], fill=(34, 197, 94, 255))
-    d.ellipse([90, 148, 114, 172], fill=(187, 247, 208, 220))
-    d.ellipse([130, 162, 146, 178], fill=(187, 247, 208, 220))
-    im.save(UI_ORIG_DIR / "UI_icon2.png")
-
-    # Craft Crate (xzx.png: 220x160)
-    im = Image.new("RGBA", (220, 160), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.polygon([(25, 55), (110, 25), (195, 55), (195, 138), (110, 155), (25, 138)], fill=(217, 160, 91, 255), outline=(120, 53, 15, 255))
-    d.polygon([(110, 75), (195, 55), (195, 138), (110, 155)], fill=(180, 118, 56, 255))
-    d.polygon([(10, 42), (98, 18), (110, 58), (25, 72)], fill=(245, 199, 132, 255), outline=(120, 53, 15, 255))
-    d.polygon([(210, 42), (122, 18), (110, 58), (195, 72)], fill=(235, 180, 108, 255), outline=(120, 53, 15, 255))
-    im.save(UI_ORIG_DIR / "xzx.png")
-
-    # Flying Star Bolt (flyGold.png: 64x64)
-    im = Image.new("RGBA", (128, 128), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    pts = []
-    for k in range(10):
-        ang = math.radians(k * 36 - 90)
-        rad = 54 if k % 2 == 0 else 24
-        pts.append((64 + rad * math.cos(ang), 64 + rad * math.sin(ang)))
-    d.polygon(pts, fill=(250, 204, 21, 255), outline=(180, 83, 9, 255))
-    im.resize((64, 64), Image.Resampling.LANCZOS).save(UI_ORIG_DIR / "flyGold.png")
-
-    # Warm Oak Gallery Frame (wood_frame.png: 560x560)
-    W, H = 560, 560
-    im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.rounded_rectangle([4, 8, W - 4, H - 2], radius=24, fill=(15, 23, 42, 60))
-    d.rounded_rectangle([4, 4, W - 4, H - 8], radius=24, fill=(146, 64, 14, 255), outline=(92, 38, 8, 255), width=6)
-    d.rounded_rectangle([14, 14, W - 14, H - 18], radius=18, fill=(180, 83, 9, 255))
-    d.rounded_rectangle([38, 38, W - 38, H - 42], radius=12, fill=(254, 252, 245, 255), outline=(120, 53, 15, 255), width=4)
-    # 4 brass corner bolts
-    for cx, cy in [(22, 22), (W - 22, 22), (22, H - 26), (W - 22, H - 26)]:
-        d.ellipse([cx - 11, cy - 11, cx + 11, cy + 11], fill=(250, 204, 21, 255), outline=(120, 53, 15, 255), width=3)
-    im.save(UI_ORIG_DIR / "wood_frame.png")
-
-    # Progress bar track & golden fill (UI_jdt_1.png, UI_jdt_2.png)
-    bw, bh = 500, 42
-    tr = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
-    ImageDraw.Draw(tr).rounded_rectangle([0, 0, bw - 1, bh - 1], radius=21, fill=(51, 65, 85, 220), outline=(255, 255, 255, 180), width=3)
-    tr.save(UI_ORIG_DIR / "UI_jdt_1.png")
-    fl = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
-    ImageDraw.Draw(fl).rounded_rectangle([3, 3, bw - 4, bh - 4], radius=18, fill=(250, 204, 21, 255))
-    ImageDraw.Draw(fl).rounded_rectangle([8, 6, bw - 9, 18], radius=6, fill=(254, 240, 138, 180))
-    fl.save(UI_ORIG_DIR / "UI_jdt_2.png")
-
-    # Primary glossy Play CTA button (按键1.png: 400x120)
-    bw, bh = 400, 120
-    btn = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
-    bd = ImageDraw.Draw(btn)
-    bd.rounded_rectangle([6, 12, bw - 6, bh - 2], radius=54, fill=(21, 128, 61, 255))
-    bd.rounded_rectangle([6, 4, bw - 6, bh - 12], radius=54, fill=(34, 197, 94, 255), outline=(255, 255, 255, 230), width=5)
-    bd.rounded_rectangle([26, 12, bw - 26, 46], radius=20, fill=(134, 239, 172, 130))
-    btn.save(UI_ORIG_DIR / "按键1.png")
-
-    # Popup card (UI_db2.png: 520x580)
-    cw, ch = 520, 580
-    card = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-    cd = ImageDraw.Draw(card)
-    cd.rounded_rectangle([6, 12, cw - 6, ch - 4], radius=38, fill=(148, 163, 184, 255))
-    cd.rounded_rectangle([6, 4, cw - 6, ch - 14], radius=38, fill=(255, 255, 255, 255), outline=(56, 189, 248, 255), width=8)
-    card.save(UI_ORIG_DIR / "UI_db2.png")
-
-    # Clean Touch Spine PNG (128x64, RGB=0 on transparent pixels!)
-    tp = Image.new("RGBA", (128, 64), (0, 0, 0, 0))
-    td = ImageDraw.Draw(tp)
-    # 4-point sparkle star at (2, 2, 52, 52)
-    scx, scy = 27, 27
-    star_pts = [(scx, scy - 23), (scx + 6, scy - 6), (scx + 23, scy), (scx + 6, scy + 6), (scx, scy + 23), (scx - 6, scy + 6), (scx - 23, scy), (scx - 6, scy - 6)]
-    td.polygon(star_pts, fill=(255, 250, 210, 255))
-    # Soft glow at (54, 12, 94, 52)
-    for r in range(18, 0, -2):
-        a = int(140 * (1 - r / 20) ** 1.5)
-        td.ellipse([74 - r, 32 - r, 74 + r, 32 + r], fill=(255, 245, 200, a))
-    # Spark particle at (96, 24, 124, 52)
-    for r in range(12, 0, -2):
-        a = int(220 * (1 - r / 14) ** 1.6)
-        td.ellipse([110 - r, 38 - r, 110 + r, 38 + r], fill=(255, 255, 255, a))
-    tp.save(TOUCH_PNG)
+    # 10. Clean sparkling touch Spine atlas (straight alpha, golden-white stars!)
+    if os.path.exists(TOUCH_PNG):
+        t_im = Image.open(TOUCH_PNG).convert("RGBA")
+        tw, th = t_im.size
+        clean = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
+        cd = ImageDraw.Draw(clean)
+        # Bright golden-white sparkle burst centered in the atlas region
+        cx, cy = tw // 2, th // 2
+        for rad, alp in [(min(tw, th) // 2 - 4, 45), (min(tw, th) // 3, 120), (min(tw, th) // 5, 220)]:
+            cd.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], fill=(255, 248, 196, alp))
+        clean = clean.filter(ImageFilter.GaussianBlur(3))
+        clean.save(TOUCH_PNG)
 
 
 def main():
-    GAMES_DIR.mkdir(parents=True, exist_ok=True)
-    UI_DIR.mkdir(parents=True, exist_ok=True)
-    UI_ORIG_DIR.mkdir(parents=True, exist_ok=True)
-
-    # 1. Replace all 11 screws, 11 boxes, 10 covers, holes
-    for c in range(1, 12):
-        draw_screw(c).save(GAMES_DIR / f"gbz_screw{c}.png")
-    for c in range(0, 11):
-        draw_toolbox(c).save(GAMES_DIR / f"gbz_box{c}.png")
-    for c in range(1, 11):
-        draw_cover(c).save(GAMES_DIR / f"gbz_cover{c}.png")
-
-    hole = draw_hole(64)
-    hole.save(GAMES_DIR / "hole.png")
-    hole.save(UI_DIR / "gbz_screw_core.png")
-    hole.save(UI_ORIG_DIR / "gbz_screw_core.png")
-
-    locked = draw_locked_box()
-    locked.save(UI_DIR / "解锁盒子.png")
-    locked.save(UI_ORIG_DIR / "解锁盒子.png")
-
-    # 2. Replace all 120 board sprites with original frosted acrylic / bezel look
-    board_count = 0
-    for p in sorted(BOARDS_DIR.glob("*.png")):
-        reskin_board_png(p)
-        board_count += 1
-
-    # 3. Replace backgrounds, UI sprites, and touch Spine texture
-    draw_backgrounds()
-    draw_ui_sprites()
-
-    print(f"Original art reskin complete: 11 screws, 11 boxes, 10 covers, {board_count} acrylic boards, UI & touch Spine.")
+    make_3d_screws()
+    make_3d_boxes_and_lids()
+    b_count = make_glossy_acrylic_boards()
+    make_3d_ui_and_backgrounds()
+    print(f"AAA 3D art composite complete: 11 3D screws + shaft, 11 3D boxes + 10 lids, locked box, {b_count} glossy acrylic boards, 3D UI & backgrounds!")
 
 
 if __name__ == "__main__":

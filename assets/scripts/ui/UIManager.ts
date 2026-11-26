@@ -59,6 +59,8 @@ export class UIManager extends Component {
     private _boltsLbl: Label | null = null;
     private _menuStreakLbl: Label | null = null;
     private _pixelCanvasNode: Node | null = null;
+    private _lastPixelArtId = '';
+    private _lastPixelFilled = 0;
     private _menuArtTitleLbl: Label | null = null;
     private _menuProgressFill: Node | null = null;
     private _menuProgressLbl: Label | null = null;
@@ -440,6 +442,11 @@ export class UIManager extends Component {
             bgG.fill();
         }
 
+        const isSameArt = this._lastPixelArtId === art.id;
+        const prevFilled = isSameArt ? this._lastPixelFilled : filled;
+        this._lastPixelArtId = art.id;
+        this._lastPixelFilled = filled;
+
         const holeSf = ResManager.ins.getGameSprite('hole');
         for (let i = 0; i < total; i++) {
             const cell = art.cells[i];
@@ -447,8 +454,18 @@ export class UIManager extends Component {
             const y = half - cell.row * cellStep;
 
             if (i < filled) {
-                const s = this.makeSpriteNode(`px_${i}`, this._pixelCanvasNode, `gbz_screw${cell.colorId}`, 34, 34);
+                const s = this.makeSpriteNode(`px_${i}`, this._pixelCanvasNode, `gbz_screw${cell.colorId}`, 35, 35);
                 s.setPosition(x, y, 0);
+                // Elastic staggered pop-in for newly placed bolts!
+                if (i >= prevFilled) {
+                    const delay = (i - prevFilled) * 0.06;
+                    s.setScale(Vec3.ZERO);
+                    tween(s)
+                        .delay(delay)
+                        .to(0.24, { scale: new Vec3(1.18, 1.18, 1), angle: 360 }, { easing: 'backOut' })
+                        .to(0.09, { scale: Vec3.ONE })
+                        .start();
+                }
             } else {
                 const h = new Node(`empty_${i}`);
                 h.setParent(this._pixelCanvasNode);

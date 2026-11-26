@@ -840,6 +840,7 @@ export class LevelController extends Component {
                     DataManager.ins.addCoins(5);
                     this._events?.onCoinsChanged();
                     this.showFlyGold(boxRef.node);
+                    this.showBoxCelebration(boxRef.node, colorId);
                     AudioManager.ins.play(AudioClips.BOX_FULL);
                     this._compNum++;
                     this.updateProgress();
@@ -1189,6 +1190,12 @@ export class LevelController extends Component {
         }
     }
 
+    /**
+     * Upgraded 3-phase 3D Unscrew -> Bezier Arc Flight -> Screw-In animation:
+     * 1. Counter-clockwise unscrew lifting out of the hole while extending a 3D metallic threaded shaft
+     * 2. Graceful quadratic Bezier flight with 3D perspective elevation & spin
+     * 3. Clockwise screw-down into target socket with shaft retract + lock-in sparkle ring
+     */
     private playScrewFly(colorId: number, startWorld: Vec3, targetNode: Node, onDone: () => void): void {
         if (!this._fxLayer) {
             onDone();
@@ -1199,38 +1206,187 @@ export class LevelController extends Component {
         const endWorld = targetNode.getComponent(UITransform)!.convertToWorldSpaceAR(Vec3.ZERO);
         const endLocal = fxUi.convertToNodeSpaceAR(endWorld);
 
-        const mover = new Node('screw_fly');
+        // Burst crisp unscrew sparks at the vacated board hole
+        this.showUnscrewSparks(startLocal, colorId);
+
+        const mover = new Node('screw_fly_3d');
         mover.setParent(this._fxLayer);
         mover.setPosition(startLocal);
 
-        // 100% original glossy spinning screw unscrew-lift-arc-drop animation
-        const mUi = mover.addComponent(UITransform);
-        mUi.setContentSize(58, 58);
-        const mSp = mover.addComponent(Sprite);
-        mSp.sizeMode = Sprite.SizeMode.CUSTOM;
-        const sf = ResManager.ins.getGameSprite(`gbz_screw${colorId}`);
-        if (sf) mSp.spriteFrame = sf;
-        else mSp.color = new Color().fromHEX(SCREW_FALLBACK_COLORS[colorId] || '#ffffff');
+        // 1. 3D metallic threaded shaft emerging underneath the screw head
+        const shaftNode = new Node('shaft');
+        shaftNode.setParent(mover);
+        const shUi = shaftNode.addComponent(UITransform);
+        shUi.setContentSize(24, 52);
+        shUi.setAnchorPoint(0.5, 1.0);
+        shaftNode.setPosition(0, 4, 0);
+        shaftNode.setScale(1, 0.05, 1);
+        const shSp = shaftNode.addComponent(Sprite);
+        shSp.sizeMode = Sprite.SizeMode.CUSTOM;
+        const shaftSf = ResManager.ins.getGameSprite('screw_shaft');
+        if (shaftSf) shSp.spriteFrame = shaftSf;
 
-        const dist = Vec3.distance(startLocal, endLocal);
-        const flyDur = Math.max(0.16, Math.min(0.32, dist / 2400));
+        // 2. 3D glossy screw head cap on top of shaft
+        const headNode = new Node('head');
+        headNode.setParent(mover);
+        const hUi = headNode.addComponent(UITransform);
+        hUi.setContentSize(60, 60);
+        const hSp = headNode.addComponent(Sprite);
+        hSp.sizeMode = Sprite.SizeMode.CUSTOM;
+        const sf = ResManager.ins.getGameSprite(`gbz_screw${colorId}`);
+        if (sf) hSp.spriteFrame = sf;
+        else hSp.color = new Color().fromHEX(SCREW_FALLBACK_COLORS[colorId] || '#ffffff');
+
+        const liftPos = new Vec3(startLocal.x, startLocal.y + 38, 0);
+        const hoverEnd = new Vec3(endLocal.x, endLocal.y + 34, 0);
+        const dist = Vec3.distance(liftPos, hoverEnd);
+        const flyDur = Math.max(0.18, Math.min(0.32, dist / 2200));
+        const ctrlX = (liftPos.x + hoverEnd.x) * 0.5 + (liftPos.x < hoverEnd.x ? -40 : 40);
+        const ctrlY = Math.max(liftPos.y, hoverEnd.y) + 68;
+
+        // Phase 1: Unscrew counter-clockwise while pulling threaded shaft out
+        tween(shaftNode)
+            .to(0.19, { scale: new Vec3(1, 1.0, 1) }, { easing: 'quadOut' })
+            .start();
+        tween(headNode)
+            .to(0.19, { angle: 360 }, { easing: 'quadOut' })
+            .start();
         tween(mover)
-            .to(0.11, {
-                position: new Vec3(startLocal.x, startLocal.y + 28, 0),
-                scale: new Vec3(1.22, 1.22, 1),
-                angle: 180,
-            }, { easing: 'quadOut' })
-            .to(flyDur, {
-                position: endLocal,
-                scale: new Vec3(0.95, 0.95, 1),
-                angle: 360,
-            }, { easing: 'cubicInOut' })
-            .to(0.06, { scale: Vec3.ONE })
+            .to(0.19, { position: liftPos, scale: new Vec3(1.24, 1.24, 1) }, { easing: 'quadOut' })
             .call(() => {
-                if (mover.isValid) mover.destroy();
-                onDone();
+                // Phase 2: Quadratic Bezier arc flight to above target socket
+                const arc = { t: 0 };
+                tween(headNode).to(flyDur, { angle: 540 }).start();
+                tween(arc)
+                    .to(flyDur, { t: 1 }, {
+                        easing: 'sineInOut',
+                        onUpdate: () => {
+                            if (!mover.isValid) return;
+                            const t = arc.t;
+                            const inv = 1 - t;
+                            const bx = inv * inv * liftPos.x + 2 * inv * t * ctrlX + t * t * hoverEnd.x;
+                            const by = inv * inv * liftPos.y + 2 * inv * t * ctrlY + t * t * hoverEnd.y;
+                            mover.setPosition(bx, by, 0);
+                            const sc = 1.24 - 0.14 * t + 0.12 * Math.sin(t * Math.PI);
+                            mover.setScale(sc, sc, 1);
+                        },
+                    })
+                    .call(() => {
+                        if (!mover.isValid) {
+                            onDone();
+                            return;
+                        }
+                        // Phase 3: Screw clockwise down into target hole, retracting shaft
+                        tween(shaftNode)
+                            .to(0.15, { scale: new Vec3(1, 0.04, 1) }, { easing: 'quadIn' })
+                            .start();
+                        tween(headNode)
+                            .to(0.15, { angle: 180 }, { easing: 'quadIn' })
+                            .start();
+                        tween(mover)
+                            .to(0.15, { position: endLocal, scale: new Vec3(0.96, 0.96, 1) }, { easing: 'quadIn' })
+                            .call(() => {
+                                this.showLockInRing(endLocal, colorId);
+                                if (mover.isValid) mover.destroy();
+                                onDone();
+                            })
+                            .start();
+                    })
+                    .start();
             })
             .start();
+    }
+
+    /** Crisp expanding shockwave ring + radial sparkles when unscrewing a bolt */
+    private showUnscrewSparks(localPos: Vec3, colorId: number): void {
+        if (!this._fxLayer) return;
+        const hex = SCREW_FALLBACK_COLORS[colorId] || '#ffffff';
+
+        // Expanding glow ring
+        const ring = new Node('unscrew_ring');
+        ring.setParent(this._fxLayer);
+        ring.setPosition(localPos);
+        const g = ring.addComponent(Graphics);
+        g.strokeColor = new Color().fromHEX(hex);
+        g.lineWidth = 4;
+        g.circle(0, 0, 22);
+        g.stroke();
+        const op = ring.addComponent(UIOpacity);
+        op.opacity = 220;
+        ring.setScale(0.6, 0.6, 1);
+        tween(ring).to(0.26, { scale: new Vec3(1.85, 1.85, 1) }, { easing: 'quadOut' }).start();
+        tween(op).to(0.26, { opacity: 0 }).call(() => { if (ring.isValid) ring.destroy(); }).start();
+
+        // 6 radial metallic glint sparks
+        for (let i = 0; i < 6; i++) {
+            const ang = (Math.PI * 2 * i) / 6 + Math.random() * 0.4;
+            const dist = 34 + Math.random() * 24;
+            const spark = new Node(`sp_${i}`);
+            spark.setParent(this._fxLayer);
+            spark.setPosition(localPos);
+            const sg = spark.addComponent(Graphics);
+            sg.fillColor = i % 2 === 0 ? Color.WHITE.clone() : new Color().fromHEX(hex);
+            sg.circle(0, 0, 4.5);
+            sg.fill();
+            const sop = spark.addComponent(UIOpacity);
+            sop.opacity = 255;
+            const tx = localPos.x + Math.cos(ang) * dist;
+            const ty = localPos.y + Math.sin(ang) * dist;
+            tween(spark)
+                .to(0.28, { position: new Vec3(tx, ty, 0), scale: new Vec3(0.2, 0.2, 1) }, { easing: 'quadOut' })
+                .start();
+            tween(sop).to(0.28, { opacity: 0 }).call(() => { if (spark.isValid) spark.destroy(); }).start();
+        }
+    }
+
+    /** Crisp lock-in ring flash when screw seats into target box/tray */
+    private showLockInRing(localPos: Vec3, colorId: number): void {
+        if (!this._fxLayer) return;
+        const ring = new Node('lock_ring');
+        ring.setParent(this._fxLayer);
+        ring.setPosition(localPos);
+        const g = ring.addComponent(Graphics);
+        g.strokeColor = Color.WHITE.clone();
+        g.lineWidth = 3.5;
+        g.circle(0, 0, 18);
+        g.stroke();
+        const op = ring.addComponent(UIOpacity);
+        op.opacity = 230;
+        ring.setScale(0.7, 0.7, 1);
+        tween(ring).to(0.2, { scale: new Vec3(1.55, 1.55, 1) }, { easing: 'quadOut' }).start();
+        tween(op).to(0.2, { opacity: 0 }).call(() => { if (ring.isValid) ring.destroy(); }).start();
+    }
+
+    /** Colorful confetti burst when a 3-screw collector box completes! */
+    private showBoxCelebration(fromBoxNode: Node, colorId: number): void {
+        if (!this._fxLayer) return;
+        const fxUi = this._fxLayer.getComponent(UITransform);
+        const fromUi = fromBoxNode.getComponent(UITransform);
+        if (!fxUi || !fromUi) return;
+        const origin = fxUi.convertToNodeSpaceAR(fromUi.convertToWorldSpaceAR(Vec3.ZERO));
+        const colors = ['#fde047', '#38bdf8', '#4ade80', '#fb7185', '#c084fc', SCREW_FALLBACK_COLORS[colorId] || '#ffffff'];
+
+        for (let i = 0; i < 12; i++) {
+            const p = new Node(`conf_${i}`);
+            p.setParent(this._fxLayer);
+            p.setPosition(origin);
+            const g = p.addComponent(Graphics);
+            g.fillColor = new Color().fromHEX(colors[i % colors.length]);
+            g.roundRect(-6, -4, 12, 8, 2);
+            g.fill();
+            const op = p.addComponent(UIOpacity);
+            op.opacity = 255;
+
+            const ang = (Math.PI * 2 * i) / 12 + (Math.random() - 0.5) * 0.35;
+            const r = 70 + Math.random() * 65;
+            const tx = origin.x + Math.cos(ang) * r;
+            const ty = origin.y + Math.sin(ang) * r + 25;
+            tween(p)
+                .to(0.32, { position: new Vec3(tx, ty, 0), angle: (Math.random() > 0.5 ? 1 : -1) * 320 }, { easing: 'quadOut' })
+                .to(0.28, { position: new Vec3(tx, ty - 45, 0), scale: new Vec3(0.3, 0.3, 1) }, { easing: 'quadIn' })
+                .start();
+            tween(op).delay(0.32).to(0.28, { opacity: 0 }).call(() => { if (p.isValid) p.destroy(); }).start();
+        }
     }
 
     /** Original GbzLvNew.showFlyGold: 3 items fly along a Bezier arc with ±360° spin to c_item (cardboard box) */
