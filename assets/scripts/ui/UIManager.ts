@@ -79,6 +79,7 @@ export class UIManager extends Component {
 
     private _loseNode: Node | null = null;
     private _settingsNode: Node | null = null;
+    private _soundBtnNode: Node | null = null;
     private _soundBtnLbl: Label | null = null;
     private _galleryNode: Node | null = null;
     private _galleryCountLbl: Label | null = null;
@@ -784,7 +785,8 @@ export class UIManager extends Component {
             if (DataManager.ins.soundEnabled) AudioManager.ins.play(AudioClips.GAME_CLICK);
         }, 28, '#ffffff', 22);
         soundBtn.setPosition(0, -16, 0);
-        this._soundBtnLbl = soundBtn.getChildByName('Label')?.getComponent(Label) || null;
+        this._soundBtnNode = soundBtn;
+        this._soundBtnLbl = soundBtn.getComponentInChildren(Label);
 
         this._settingsNode.active = false;
     }
@@ -1028,8 +1030,18 @@ export class UIManager extends Component {
     }
 
     private refreshSettingsLabels(): void {
+        const on = DataManager.ins.soundEnabled;
         if (this._soundBtnLbl) {
-            this._soundBtnLbl.string = `SOUND FX: ${DataManager.ins.soundEnabled ? 'ON' : 'OFF'}`;
+            this._soundBtnLbl.string = `SOUND FX: ${on ? 'ON' : 'OFF'}`;
+        }
+        if (this._soundBtnNode) {
+            const g = this._soundBtnNode.getComponent(Graphics);
+            if (g) {
+                g.clear();
+                g.fillColor = new Color().fromHEX(on ? '#0ea5e9' : '#94a3b8');
+                g.roundRect(-180, -38, 360, 76, 22);
+                g.fill();
+            }
         }
     }
 }
