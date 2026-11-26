@@ -56,7 +56,7 @@ IOS_EXTRA_CXXFLAGS='$(inherited) -Wno-error=invalid-specialization -Wno-error=en
 # across Xcode versions (usr/lib/swift/<platform> in 27, elsewhere in 26), so
 # locate the archive on the actual toolchain instead of hardcoding a path.
 SWIFT_COMPAT_DIR="$(dirname "$(find "$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift" \
-	-name 'libswiftCompatibility51.a' -print -quit 2>/dev/null)" 2>/dev/null || true)"
+	-path '*iphoneos/libswiftCompatibility51.a' -print -quit 2>/dev/null)" 2>/dev/null || true)"
 if [[ -z "$SWIFT_COMPAT_DIR" || ! -d "$SWIFT_COMPAT_DIR" ]]; then
 	SWIFT_COMPAT_DIR="$(dirname "$(find "$(xcode-select -p)" \
 		-name 'libswiftCompatibility51.a' -print -quit 2>/dev/null)" 2>/dev/null || true)"
