@@ -67,3 +67,19 @@ Download **Screw Out: Sweet Jam** now and feel the sweetest click-and-pop puzzle
 1. Open `build/android/proj` in Android Studio (Target SDK 35, AAB enabled, `arm64-v8a` + `armeabi-v7a`).
 2. Wire AppLovin MAX / AdMob + Google UMP SDK to Java/Kotlin class `com.screwout.ads.AdBridge` (`requestConsent`, `showRewarded`, `showInterstitial`, `vibrate`).
 3. Sign release `.aab` with your upload keystore and upload to Google Play Console.
+
+---
+
+## 4. Store URLs (live, 2026-11-26)
+
+| Field | URL |
+| :--- | :--- |
+| Marketing URL | https://screw-out-sweet-jam.rwecho.workers.dev/ |
+| Privacy Policy | https://screw-out-sweet-jam.rwecho.workers.dev/privacy |
+| Support URL | https://screw-out-sweet-jam.rwecho.workers.dev/support |
+| Terms of Service | https://screw-out-sweet-jam.rwecho.workers.dev/terms |
+| app-ads.txt | https://screw-out-sweet-jam.rwecho.workers.dev/app-ads.txt (google.com, pub-2271052258925299, DIRECT, f08c47fec0942fa0) |
+
+Note: AdMob publisher `pub-2271052258925299` is the account's own verified
+publisher, so the `ca-app-pub-2271052258925299~...` IDs baked into the build
+scripts are this account's real AdMob App IDs, not Google test placeholders.
