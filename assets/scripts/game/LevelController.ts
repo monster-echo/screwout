@@ -43,7 +43,7 @@ const { ccclass } = _decorator;
 
 export interface LevelEvents {
     onProgressChanged: (progress: number) => void;
-    onWin: () => void;
+    onWin: (totalScrews: number) => void;
     onLoseFull: () => void;
     onToast: (msg: string) => void;
     onCoinsChanged: () => void;
@@ -1011,7 +1011,7 @@ export class LevelController extends Component {
                     const reward = DataManager.ins.recordWin();
                     MonetizationManager.ins.trackEvent('level_win', { bolts: reward.bolts });
                     this._events?.onCoinsChanged();
-                    this._events?.onWin();
+                    this._events?.onWin(this._totalScrewCount);
                 }
             });
         }
@@ -1209,21 +1209,22 @@ export class LevelController extends Component {
         const ctrlX = (liftPos.x + hoverEnd.x) * 0.5 + (liftPos.x < hoverEnd.x ? -40 : 40);
         const ctrlY = Math.max(liftPos.y, hoverEnd.y) + 68;
 
-        // Phase 1: Unscrew counter-clockwise while pulling threaded shaft out
+        // Phase 1: Unscrew counter-clockwise while pulling threaded shaft out (snappy 0.15s)
         tween(shaftNode)
-            .to(0.19, { scale: new Vec3(1, 1.0, 1) }, { easing: 'quadOut' })
+            .to(0.15, { scale: new Vec3(1, 1.0, 1) }, { easing: 'quadOut' })
             .start();
         tween(headNode)
-            .to(0.19, { angle: 360 }, { easing: 'quadOut' })
+            .to(0.15, { angle: 360 }, { easing: 'quadOut' })
             .start();
         tween(mover)
-            .to(0.19, { position: liftPos, scale: new Vec3(1.24, 1.24, 1) }, { easing: 'quadOut' })
+            .to(0.15, { position: liftPos, scale: new Vec3(1.24, 1.24, 1) }, { easing: 'quadOut' })
             .call(() => {
                 // Phase 2: Quadratic Bezier arc flight to above target socket
                 const arc = { t: 0 };
-                tween(headNode).to(flyDur, { angle: 540 }).start();
+                const fDur = Math.max(0.15, Math.min(0.24, flyDur));
+                tween(headNode).to(fDur, { angle: 540 }).start();
                 tween(arc)
-                    .to(flyDur, { t: 1 }, {
+                    .to(fDur, { t: 1 }, {
                         easing: 'sineInOut',
                         onUpdate: () => {
                             if (!mover.isValid) return;
@@ -1243,13 +1244,13 @@ export class LevelController extends Component {
                         }
                         // Phase 3: Screw clockwise down into target hole, retracting shaft
                         tween(shaftNode)
-                            .to(0.15, { scale: new Vec3(1, 0.04, 1) }, { easing: 'quadIn' })
+                            .to(0.12, { scale: new Vec3(1, 0.04, 1) }, { easing: 'quadIn' })
                             .start();
                         tween(headNode)
-                            .to(0.15, { angle: 180 }, { easing: 'quadIn' })
+                            .to(0.12, { angle: 180 }, { easing: 'quadIn' })
                             .start();
                         tween(mover)
-                            .to(0.15, { position: endLocal, scale: new Vec3(0.96, 0.96, 1) }, { easing: 'quadIn' })
+                            .to(0.12, { position: endLocal, scale: new Vec3(0.96, 0.96, 1) }, { easing: 'quadIn' })
                             .call(() => {
                                 this.showLockInRing(endLocal, colorId);
                                 if (mover.isValid) mover.destroy();
@@ -1262,45 +1263,63 @@ export class LevelController extends Component {
             .start();
     }
 
-    /** Crisp expanding shockwave ring + radial sparkles when unscrewing a bolt */
+    /** Unmistakable, crisp tap-screw feedback: bright dual shockwave rings + 8 star sparks! */
     private showUnscrewSparks(localPos: Vec3, colorId: number): void {
         if (!this._fxLayer) return;
-        const hex = SCREW_FALLBACK_COLORS[colorId] || '#ffffff';
+        const hex = SCREW_FALLBACK_COLORS[colorId] || '#fde047';
 
-        // Expanding glow ring
+        // 1. Bright white inner flash + expanding outer colored shockwave ring
+        const flash = new Node('tap_flash');
+        flash.setParent(this._fxLayer);
+        flash.setPosition(localPos);
+        const fg = flash.addComponent(Graphics);
+        fg.fillColor = new Color(255, 255, 255, 210);
+        fg.circle(0, 0, 26);
+        fg.fill();
+        const fop = flash.addComponent(UIOpacity);
+        fop.opacity = 230;
+        flash.setScale(0.5, 0.5, 1);
+        tween(flash).to(0.22, { scale: new Vec3(1.6, 1.6, 1) }, { easing: 'quadOut' }).start();
+        tween(fop).to(0.22, { opacity: 0 }).call(() => { if (flash.isValid) flash.destroy(); }).start();
+
         const ring = new Node('unscrew_ring');
         ring.setParent(this._fxLayer);
         ring.setPosition(localPos);
         const g = ring.addComponent(Graphics);
+        g.strokeColor = Color.WHITE.clone();
+        g.lineWidth = 6;
+        g.circle(0, 0, 28);
+        g.stroke();
         g.strokeColor = new Color().fromHEX(hex);
-        g.lineWidth = 4;
-        g.circle(0, 0, 22);
+        g.lineWidth = 3.5;
+        g.circle(0, 0, 32);
         g.stroke();
         const op = ring.addComponent(UIOpacity);
-        op.opacity = 220;
-        ring.setScale(0.6, 0.6, 1);
-        tween(ring).to(0.26, { scale: new Vec3(1.85, 1.85, 1) }, { easing: 'quadOut' }).start();
-        tween(op).to(0.26, { opacity: 0 }).call(() => { if (ring.isValid) ring.destroy(); }).start();
+        op.opacity = 255;
+        ring.setScale(0.55, 0.55, 1);
+        tween(ring).to(0.32, { scale: new Vec3(1.95, 1.95, 1) }, { easing: 'quadOut' }).start();
+        tween(op).to(0.32, { opacity: 0 }).call(() => { if (ring.isValid) ring.destroy(); }).start();
 
-        // 6 radial metallic glint sparks
-        for (let i = 0; i < 6; i++) {
-            const ang = (Math.PI * 2 * i) / 6 + Math.random() * 0.4;
-            const dist = 34 + Math.random() * 24;
+        // 2. 8 bright radial sparkle streaks bursting out around the screw
+        for (let i = 0; i < 8; i++) {
+            const ang = (Math.PI * 2 * i) / 8 + Math.random() * 0.25;
+            const dist = 48 + Math.random() * 28;
             const spark = new Node(`sp_${i}`);
             spark.setParent(this._fxLayer);
             spark.setPosition(localPos);
+            spark.angle = (ang * 180) / Math.PI;
             const sg = spark.addComponent(Graphics);
-            sg.fillColor = i % 2 === 0 ? Color.WHITE.clone() : new Color().fromHEX(hex);
-            sg.circle(0, 0, 4.5);
+            sg.fillColor = i % 2 === 0 ? Color.WHITE.clone() : new Color().fromHEX('#fde047');
+            sg.roundRect(-9, -3.5, 18, 7, 3);
             sg.fill();
             const sop = spark.addComponent(UIOpacity);
             sop.opacity = 255;
             const tx = localPos.x + Math.cos(ang) * dist;
             const ty = localPos.y + Math.sin(ang) * dist;
             tween(spark)
-                .to(0.28, { position: new Vec3(tx, ty, 0), scale: new Vec3(0.2, 0.2, 1) }, { easing: 'quadOut' })
+                .to(0.32, { position: new Vec3(tx, ty, 0), scale: new Vec3(0.25, 0.25, 1) }, { easing: 'quadOut' })
                 .start();
-            tween(sop).to(0.28, { opacity: 0 }).call(() => { if (spark.isValid) spark.destroy(); }).start();
+            tween(sop).to(0.32, { opacity: 0 }).call(() => { if (spark.isValid) spark.destroy(); }).start();
         }
     }
 

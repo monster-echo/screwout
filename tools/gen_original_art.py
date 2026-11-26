@@ -153,24 +153,29 @@ def hue_grade_red_master(im: Image.Image, target_h: float, sat_mul: float, val_m
 
 def make_3d_screws():
     raw = Image.open(SRC_SCREW_RED)
-    # Remove white background cleanly
-    cut = flood_remove_white_bg(raw, thresh=232, feather=0.8)
-    # Make square centered with crisp circular trim so rotation never clips
+    # Remove white background first to find exact circle bounding box
+    cut = flood_remove_white_bg(raw, thresh=228, feather=0.0)
     side = max(cut.width, cut.height)
     sq = Image.new("RGBA", (side, side), (0, 0, 0, 0))
     sq.paste(cut, ((side - cut.width) // 2, (side - cut.height) // 2), cut)
-    master = sq.resize((128, 128), Image.Resampling.LANCZOS)
 
-    # Apply tiny soft drop-shadow behind each screw for depth on acrylic boards
+    # Apply mathematically perfect 4x-supersampled circular alpha mask shrunk inward by 2.5%
+    # This eliminates 100% of JPEG off-white edge halo / dirty fringe!
+    master_hi = sq.resize((256, 256), Image.Resampling.LANCZOS)
+    circ_mask_hi = Image.new("L", (512, 512), 0)
+    ImageDraw.Draw(circ_mask_hi).ellipse([12, 12, 500, 500], fill=255)
+    circ_mask = circ_mask_hi.resize((256, 256), Image.Resampling.LANCZOS)
+    master_hi.putalpha(circ_mask)
+    master = master_hi.resize((128, 128), Image.Resampling.LANCZOS)
+
+    # Apply tiny soft contact shadow behind each screw for depth on acrylic boards
     for idx, (th, sm, vm) in COLOR_TARGETS.items():
         graded = hue_grade_red_master(master, th, sm, vm, min_sat_to_shift=0.14)
         canvas = Image.new("RGBA", (116, 116), (0, 0, 0, 0))
         scaled = graded.resize((104, 104), Image.Resampling.LANCZOS)
-        # Soft contact shadow
         sh = Image.new("RGBA", (116, 116), (0, 0, 0, 0))
-        sd = ImageDraw.Draw(sh)
-        sd.ellipse([8, 10, 108, 110], fill=(15, 23, 42, 75))
-        sh = sh.filter(ImageFilter.GaussianBlur(3.2))
+        ImageDraw.Draw(sh).ellipse([9, 11, 107, 109], fill=(15, 23, 42, 68))
+        sh = sh.filter(ImageFilter.GaussianBlur(2.8))
         canvas.alpha_composite(sh)
         canvas.alpha_composite(scaled, (6, 4))
         canvas.save(os.path.join(GAMES_DIR, f"gbz_screw{idx}.png"))
@@ -328,54 +333,48 @@ def make_glossy_acrylic_boards():
         is_frame = ("_1." in fname) or ("frame" in fname.lower())
 
         if is_frame:
-            # Crisp glossy white/frosted acrylic outer rim with subtle depth
+            # Ultra-clean pure white glossy outer rim (zero grey/dirty edge pixels!)
             out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            grad = Image.new("RGBA", (w, h), (255, 255, 255, 255))
-            gd = ImageDraw.Draw(grad)
+            apx = alpha.load()
+            opx = out.load()
             for y in range(h):
                 t = y / max(1, h - 1)
-                v = int(255 - 24 * t)
-                gd.line([(0, y), (w, y)], fill=(v, min(255, v + 3), min(255, v + 8), 255))
-            out.paste(grad, (0, 0), alpha)
+                v = int(255 - 12 * t)
+                for x in range(w):
+                    a = apx[x, y]
+                    # Zero out tiny stray semi-transparent noise pixels (<16) that cause dirty halos
+                    if a < 16:
+                        opx[x, y] = (0, 0, 0, 0)
+                    else:
+                        opx[x, y] = (v, min(255, v + 2), 255, a)
             out.save(fpath)
         else:
-            # Translucent glossy crystal slab (tinted at runtime by Cocos Sprite.color)
-            # We bake rich lighting (top-left bright specular, diagonal sheen, bottom depth) into white-base RGB!
+            # Clean translucent glossy crystal slab (tinted at runtime by Cocos Sprite.color)
             base = Image.new("RGBA", (w, h), (255, 255, 255, 255))
             bd = ImageDraw.Draw(base)
             for y in range(h):
                 t = y / max(1, h - 1)
-                # Subtle top-bright to bottom-deep vertical studio gradient
-                lum = int(252 - 42 * t)
-                bd.line([(0, y), (w, y)], fill=(lum, lum, min(255, lum + 5), 255))
+                lum = int(254 - 30 * t)
+                bd.line([(0, y), (w, y)], fill=(lum, lum, min(255, lum + 3), 255))
 
-            # Diagonal soft glass reflection streak
+            # Subtle diagonal soft glass reflection streak
             sheen = Image.new("RGBA", (w, h), (0, 0, 0, 0))
             sd = ImageDraw.Draw(sheen)
             sd.polygon([
-                (int(w * 0.05), 0), (int(w * 0.38), 0),
-                (0, int(h * 0.42)), (0, int(h * 0.12))
-            ], fill=(255, 255, 255, 95))
-            sd.polygon([
-                (int(w * 0.48), 0), (int(w * 0.60), 0),
-                (int(w * 0.08), int(h * 0.56)), (0, int(h * 0.48))
-            ], fill=(255, 255, 255, 55))
+                (int(w * 0.05), 0), (int(w * 0.36), 0),
+                (0, int(h * 0.40)), (0, int(h * 0.12))
+            ], fill=(255, 255, 255, 78))
             sheen = sheen.filter(ImageFilter.GaussianBlur(4))
             base.alpha_composite(sheen)
 
-            # Inner beveled rim highlight (erode alpha to find edge)
-            eroded = alpha.filter(ImageFilter.MinFilter(5))
+            # Apply exact clean original alpha (zero blocky MinFilter halo, zero stray dirt!)
             apx = alpha.load()
-            epx = eroded.load()
             bpx = base.load()
             for y in range(h):
                 for x in range(w):
                     a = apx[x, y]
-                    if a == 0:
+                    if a < 14:
                         bpx[x, y] = (0, 0, 0, 0)
-                    elif epx[x, y] < a:
-                        # Crisp glowing glass edge
-                        bpx[x, y] = (255, 255, 255, a)
                     else:
                         r, g, b, _ = bpx[x, y]
                         bpx[x, y] = (r, g, b, a)
@@ -389,9 +388,24 @@ def make_3d_ui_and_backgrounds():
     bg_menu = Image.open(SRC_BG_MENU).convert("RGB").resize((750, 1334), Image.Resampling.LANCZOS)
     bg_menu.save(os.path.join(UI_ORIG_DIR, "bg_menu_hex.png"))
 
-    # 2. Clean Studio Playfield Background
-    bg_game = Image.open(SRC_BG_GAME).convert("RGB").resize((750, 1334), Image.Resampling.LANCZOS)
-    bg_game.save(os.path.join(UI_ORIG_DIR, "bg_game_poly.jpg"), quality=94)
+    # 2. Clean Fresh Sky-Blue Studio Playfield Background (matches original bright airy tone)
+    bg_game = Image.new("RGB", (750, 1334))
+    bgd = ImageDraw.Draw(bg_game)
+    for y in range(1334):
+        t = y / 1333.0
+        # Fresh sky-blue top -> soft sunlit aqua-ice bottom (makes all 10 screw colors & white frames POP!)
+        r = int(162 + 32 * t)
+        g = int(214 + 22 * t)
+        b = int(248 + 4 * t)
+        bgd.line([(0, y), (750, y)], fill=(r, g, b))
+    # Subtle soft geometric diamond facets like original low-poly sky
+    facets = Image.new("RGBA", (750, 1334), (0, 0, 0, 0))
+    fd = ImageDraw.Draw(facets)
+    fd.polygon([(0, 260), (420, 420), (140, 780)], fill=(255, 255, 255, 26))
+    fd.polygon([(750, 340), (380, 620), (750, 960)], fill=(255, 255, 255, 22))
+    fd.polygon([(0, 880), (360, 1020), (120, 1334)], fill=(255, 255, 255, 20))
+    bg_game = Image.alpha_composite(bg_game.convert("RGBA"), facets).convert("RGB")
+    bg_game.save(os.path.join(UI_ORIG_DIR, "bg_game_poly.jpg"), quality=95)
 
     # 3. 3D Handcrafted Oak Wooden Frame
     wf_raw = Image.open(SRC_WOOD_FRAME)

@@ -59,15 +59,19 @@ export class UIManager extends Component {
     // Popups
     private _pauseNode: Node | null = null;
     private _winNode: Node | null = null;
-    private _winTitleLbl: Label | null = null;
-    private _winArtCanvas: Node | null = null;
-    private _winFlyLayer: Node | null = null;
-    private _winProgFill: Node | null = null;
-    private _winProgLbl: Label | null = null;
-    private _winStatusLbl: Label | null = null;
-    private _winShotBtn: Node | null = null;
-    private _winShotLbl: Label | null = null;
-    private _winNextBtn: Node | null = null;
+    private _winCountLbl: Label | null = null;
+
+    // Full-screen Paint Layer (matches original GbzPaintLayer)
+    private _paintNode: Node | null = null;
+    private _paintArtCanvas: Node | null = null;
+    private _paintFlyLayer: Node | null = null;
+    private _paintBoxPile: Node | null = null;
+    private _paintProgFill: Node | null = null;
+    private _paintProgLbl: Label | null = null;
+    private _paintTipLbl: Label | null = null;
+    private _paintShotBtn: Node | null = null;
+    private _paintShotLbl: Label | null = null;
+    private _paintNextBtn: Node | null = null;
     private _paintScrewsLeft = 0;
     private _paintArt: PixelArtDef | null = null;
     private _paintCurIndex = 0;
@@ -99,7 +103,8 @@ export class UIManager extends Component {
         this.buildHUD();
         this.buildMenu();
         this.buildPausePopup();
-        this.buildWinPaintPopup();
+        this.buildWinPopup();
+        this.buildPaintLayer();
         this.buildLosePopup();
         this.buildSettingsPopup();
         this.buildGalleryModal();
@@ -388,79 +393,168 @@ export class UIManager extends Component {
         }
     }
 
-    // ==================== Original Press-and-Hold Screw-Shooting Paint Layer (GbzPaintLayer) ====================
+    // ==================== Step 1: Challenge Complete Popup (Original GbzWinLayer) ====================
 
-    private buildWinPaintPopup(): void {
-        this._winNode = createPanel('GbzWinLayer', this.node, 750, 1334, '#000000', 185, 0, true);
-        const card = this.makeSpriteNode('card', this._winNode, 'UI_db2', 610, 940);
+    private buildWinPopup(): void {
+        this._winNode = createPanel('GbzWinLayer', this.node, 750, 1334, '#000000', 175, 0, true);
+        const card = this.makeSpriteNode('card', this._winNode, 'UI_db2', 580, 740);
 
-        this._winTitleLbl = createLabel('win_title', card, 'LEVEL COMPLETE!', 40, '#16a34a', 540, 54);
-        this._winTitleLbl.isBold = true;
-        this._winTitleLbl.node.setPosition(0, 404, 0);
+        // Top royal-blue header ribbon ("LEVEL COMPLETE!")
+        const ribbon = createPanel('ribbon', card, 380, 80, '#1d4ed8', 255, 22);
+        ribbon.setPosition(0, 355, 0);
+        const rLbl = createLabel('win_title', ribbon, 'LEVEL COMPLETE!', 36, '#ffffff', 360, 48);
+        rLbl.isBold = true;
 
-        this._winStatusLbl = createLabel('win_sub', card, 'Hold to shoot screws into your art!', 23, '#475569', 540, 34);
-        this._winStatusLbl.node.setPosition(0, 352, 0);
+        // Center showcase panel with 3D crate overflowing with colorful 3D screws
+        const boxStage = createPanel('box_stage', card, 480, 290, '#eff6ff', 255, 24);
+        boxStage.setPosition(0, 130, 0);
 
-        // Wooden frame where shot screws land & form the pixel art
-        const wf = this.makeSpriteNode('win_wood_frame', card, 'wood_frame', 420, 420);
-        wf.setPosition(0, 112, 0);
-        this._winArtCanvas = new Node('win_art_canvas');
-        this._winArtCanvas.setParent(wf);
-        this._winArtCanvas.setPosition(0, 0, 0);
+        // Pile of colorful 3D screws peeking out of the top of the shipping crate
+        const pile = new Node('win_pile');
+        pile.setParent(boxStage);
+        pile.setPosition(0, 18, 0);
+        const pileSpecs: [number, number, number][] = [
+            [-62, 34, 1], [-24, 48, 2], [18, 52, 3], [56, 36, 4],
+            [-48, 14, 5], [-8, 24, 6], [34, 22, 7], [68, 12, 8],
+            [-30, -4, 9], [12, 4, 10], [46, -2, 2],
+        ];
+        for (const [px, py, cId] of pileSpecs) {
+            const s = this.makeSpriteNode(`wp_${cId}`, pile, `gbz_screw${cId}`, 44, 44);
+            s.setPosition(px, py, 0);
+        }
+        const crate = this.makeSpriteFit('win_crate', boxStage, 'xzx', 240, 196);
+        crate.setPosition(0, -34, 0);
 
-        // Layer above wooden frame for flying shot screws
-        this._winFlyLayer = new Node('win_fly_layer');
-        this._winFlyLayer.setParent(wf);
-        this._winFlyLayer.setPosition(0, 0, 0);
+        // "Awesome! Collected N Screws!"
+        this._winCountLbl = createLabel('win_cnt', card, 'Awesome! Collected 15 Screws!', 28, '#0284c7', 500, 42);
+        this._winCountLbl.isBold = true;
+        this._winCountLbl.node.setPosition(0, -68, 0);
 
-        // Live progress bar climbing with every screw shot!
-        const barTrack = this.makeSpriteNode('win_jdt_track', card, 'UI_jdt_1', 420, 38);
-        barTrack.setPosition(0, -134, 0);
-        this._winProgFill = this.makeSpriteNode('win_jdt_fill', barTrack, 'UI_jdt_2', 420, 38);
-        this._winProgFill.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
-        this._winProgFill.setPosition(-210, 0, 0);
-        this._winProgLbl = createLabel('win_jdt_lbl', barTrack, '0%', 22, '#ffffff', 320, 32);
-        this._winProgLbl.isBold = true;
+        // Full green 100% progress bar
+        const gBar = createPanel('green_bar', card, 460, 48, '#65a30d', 255, 16);
+        gBar.setPosition(0, -142, 0);
+        const gLbl = createLabel('g_lbl', gBar, '100%', 26, '#ffffff', 160, 34);
+        gLbl.isBold = true;
 
-        // Original Press-and-Hold SHOOT button (shotBtn)
-        this._winShotBtn = createPanel('btn_shot', card, 400, 96, '#f59e0b', 255, 30);
-        this._winShotBtn.setPosition(0, -242, 0);
-        this._winShotLbl = createLabel('shot_lbl', this._winShotBtn, 'HOLD TO SHOOT (20)', 30, '#ffffff', 380, 46);
-        this._winShotLbl.isBold = true;
+        // Primary CTA: START CRAFTING (opens full-screen GbzPaintLayer!)
+        createButton('btn_go_paint', card, 'START CRAFTING', 360, 88, '#f97316', () => {
+            AudioManager.ins.play(AudioClips.GAME_CLICK);
+            if (this._winNode) this._winNode.active = false;
+            this.openPaintLayer();
+        }, 32, '#ffffff', 30).setPosition(0, -256, 0);
 
-        this._winShotBtn.on(Node.EventType.TOUCH_START, () => {
+        this._winNode.active = false;
+    }
+
+    // ==================== Step 2: Full-Screen Press-and-Hold Paint Layer (Original GbzPaintLayer) ====================
+
+    private buildPaintLayer(): void {
+        this._paintNode = new Node('GbzPaintLayer');
+        this._paintNode.setParent(this.node);
+        const pUi = this._paintNode.addComponent(UITransform);
+        pUi.setContentSize(750, 1334);
+        const pW = this._paintNode.addComponent(Widget);
+        pW.isAlignTop = pW.isAlignBottom = pW.isAlignLeft = pW.isAlignRight = true;
+        pW.top = pW.bottom = pW.left = pW.right = 0;
+        this._paintNode.addComponent(BlockInputEvents);
+
+        // Full-bleed sky background matching original GbzPaintLayer
+        const bg = this.makeSpriteNode('bg', this._paintNode, 'bg_menu_hex', 750, 1334);
+        const bgW = bg.addComponent(Widget);
+        bgW.isAlignTop = bgW.isAlignBottom = bgW.isAlignLeft = bgW.isAlignRight = true;
+        bgW.top = bgW.bottom = bgW.left = bgW.right = 0;
+
+        // Upper-center: Large 3D Oak Wooden Frame (exact match to original!)
+        const wf = this.makeSpriteNode('paint_wood_frame', this._paintNode, 'wood_frame', 524, 524);
+        wf.setPosition(0, 260, 0);
+        this._paintArtCanvas = new Node('paint_art_canvas');
+        this._paintArtCanvas.setParent(wf);
+        this._paintArtCanvas.setPosition(0, 0, 0);
+
+        this._paintFlyLayer = new Node('paint_fly_layer');
+        this._paintFlyLayer.setParent(wf);
+        this._paintFlyLayer.setPosition(0, 0, 0);
+
+        // Yellow Completion Progress Bar directly under wooden frame
+        const barTrack = this.makeSpriteNode('paint_jdt_track', this._paintNode, 'UI_jdt_1', 490, 44);
+        barTrack.setPosition(0, -40, 0);
+        this._paintProgFill = this.makeSpriteNode('paint_jdt_fill', barTrack, 'UI_jdt_2', 490, 44);
+        this._paintProgFill.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
+        this._paintProgFill.setPosition(-245, 0, 0);
+        this._paintProgLbl = createLabel('paint_jdt_lbl', barTrack, 'Completion: 0%', 24, '#ffffff', 380, 34);
+        this._paintProgLbl.isBold = true;
+
+        // Lower-center: 3D Shipping Crate filled with screws that empty out as you shoot!
+        const crateRoot = new Node('crate_root');
+        crateRoot.setParent(this._paintNode);
+        crateRoot.setPosition(0, -252, 0);
+
+        this._paintBoxPile = new Node('crate_pile');
+        this._paintBoxPile.setParent(crateRoot);
+        this._paintBoxPile.setPosition(0, 56, 0);
+
+        const crateSp = this.makeSpriteFit('paint_crate', crateRoot, 'xzx', 260, 212);
+        crateSp.setPosition(0, -14, 0);
+
+        // Hint text above shoot button ("Hold to shoot continuously")
+        this._paintTipLbl = createLabel('tip_lbl', this._paintNode, 'Hold to shoot continuously', 24, '#e11d48', 420, 34);
+        this._paintTipLbl.isBold = true;
+        this._paintTipLbl.node.setPosition(0, -408, 0);
+
+        // Bottom-left: MY ART Gallery button (matches original!)
+        const galBtn = this.makeSpriteNode('paint_gallery', this._paintNode, 'icon_menu_gallery', 124, 116);
+        const gW = galBtn.addComponent(Widget);
+        gW.isAlignBottom = true;
+        gW.isAlignLeft = true;
+        gW.bottom = 128;
+        gW.left = 34;
+        const gLbl = createLabel('gl', galBtn, 'MY ART', 19, '#ffffff', 110, 24);
+        gLbl.isBold = true;
+        gLbl.node.setPosition(0, -38, 0);
+        this.bindTap(galBtn, () => {
+            AudioManager.ins.play(AudioClips.GAME_CLICK);
+            this.openGallery();
+        });
+
+        // Bottom-center: Press-and-Hold SHOOT SCREWS button (magenta-pink like original!)
+        this._paintShotBtn = createPanel('btn_shot', this._paintNode, 340, 88, '#ec4899', 255, 44);
+        const shW = this._paintShotBtn.addComponent(Widget);
+        shW.isAlignBottom = true;
+        shW.isAlignHorizontalCenter = true;
+        shW.bottom = 110;
+        this._paintShotLbl = createLabel('shot_lbl', this._paintShotBtn, 'SHOOT SCREWS', 30, '#ffffff', 320, 44);
+        this._paintShotLbl.isBold = true;
+
+        this._paintShotBtn.on(Node.EventType.TOUCH_START, () => {
             if (this._paintScrewsLeft <= 0) return;
             this._isShooting = true;
-            this._winShotBtn?.setScale(0.95, 0.95, 1);
+            this._paintShotBtn?.setScale(0.94, 0.94, 1);
             this.fireOnePaintScrew();
             this.unschedule(this.fireOnePaintScrew);
             this.schedule(this.fireOnePaintScrew, 0.065);
         });
         const stopShoot = () => {
             this._isShooting = false;
-            this._winShotBtn?.setScale(Vec3.ONE);
+            this._paintShotBtn?.setScale(Vec3.ONE);
             this.unschedule(this.fireOnePaintScrew);
         };
-        this._winShotBtn.on(Node.EventType.TOUCH_END, stopShoot);
-        this._winShotBtn.on(Node.EventType.TOUCH_CANCEL, stopShoot);
+        this._paintShotBtn.on(Node.EventType.TOUCH_END, stopShoot);
+        this._paintShotBtn.on(Node.EventType.TOUCH_CANCEL, stopShoot);
 
-        // Primary CTA: NEXT LEVEL (appears automatically once all screws are shot!)
-        this._winNextBtn = createButton('btn_next', card, 'NEXT LEVEL', 390, 90, '#22c55e', () => {
+        // Bottom-center: NEXT LEVEL button (replaces SHOOT button once crate is empty!)
+        this._paintNextBtn = createButton('btn_next', this._paintNode, 'NEXT LEVEL', 350, 90, '#0ea5e9', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             this.stopPaintShooting();
+            if (this._paintNode) this._paintNode.active = false;
             this._actions?.onNextLevel();
-        }, 34, '#ffffff', 28);
-        this._winNextBtn.setPosition(0, -242, 0);
-        this._winNextBtn.active = false;
+        }, 32, '#ffffff', 45);
+        const nxW = this._paintNextBtn.addComponent(Widget);
+        nxW.isAlignBottom = true;
+        nxW.isAlignHorizontalCenter = true;
+        nxW.bottom = 110;
+        this._paintNextBtn.active = false;
 
-        createButton('btn_home', card, 'HOME', 220, 56, '#64748b', () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            this.stopPaintShooting();
-            DataManager.ins.advanceLevel();
-            this._actions?.onBackMenu();
-        }, 24, '#ffffff', 18).setPosition(0, -356, 0);
-
-        this._winNode.active = false;
+        this._paintNode.active = false;
     }
 
     private stopPaintShooting(): void {
@@ -468,10 +562,12 @@ export class UIManager extends Component {
         this.unschedule(this.fireOnePaintScrew);
     }
 
-    private initWinPaintCeremony(): void {
-        if (!this._winArtCanvas || !this._winFlyLayer) return;
+    private openPaintLayer(): void {
+        if (!this._paintNode || !this._paintArtCanvas || !this._paintFlyLayer || !this._paintBoxPile) return;
         this.stopPaintShooting();
-        this._winFlyLayer.removeAllChildren();
+        this._paintFlyLayer.removeAllChildren();
+        this._paintBoxPile.removeAllChildren();
+        this._paintNode.active = true;
 
         // Pick active unfinished artwork
         let art = PixelGalleryService.getActiveArt();
@@ -484,34 +580,40 @@ export class UIManager extends Component {
         }
         this._paintArt = art;
         this._paintCurIndex = PixelGalleryService.getFilledCount(art.id);
-        // Grant ~1/3 of the artwork's screws per level win (so ~3 levels complete 1 full piece!)
         this._paintScrewsLeft = Math.ceil(art.cells.length / 3);
 
-        this.drawPixelArtStatic(this._winArtCanvas, art, this._paintCurIndex, 32, 30);
-        this.updateWinPaintUI();
+        // Populate colorful 3D screws inside the shipping crate mouth
+        for (let i = 0; i < this._paintScrewsLeft; i++) {
+            const cId = 1 + (i % 10);
+            const s = this.makeSpriteNode(`pile_${i}`, this._paintBoxPile, `gbz_screw${cId}`, 40, 40);
+            s.setPosition((Math.random() - 0.5) * 145, (Math.random() - 0.5) * 44, 0);
+            s.angle = Math.random() * 360;
+        }
 
-        if (this._winTitleLbl) this._winTitleLbl.string = 'LEVEL COMPLETE!';
-        if (this._winStatusLbl) this._winStatusLbl.string = 'Press & hold to shoot screws into your art!';
-        if (this._winShotBtn) this._winShotBtn.active = true;
-        if (this._winNextBtn) this._winNextBtn.active = false;
+        this.drawPixelArtStatic(this._paintArtCanvas, art, this._paintCurIndex, 40, 37);
+        this.updatePaintUI();
+
+        if (this._paintTipLbl) this._paintTipLbl.node.active = true;
+        if (this._paintShotBtn) this._paintShotBtn.active = true;
+        if (this._paintNextBtn) this._paintNextBtn.active = false;
     }
 
-    private updateWinPaintUI(): void {
+    private updatePaintUI(): void {
         if (!this._paintArt) return;
         const total = this._paintArt.cells.length;
         const pct = Math.round((this._paintCurIndex / Math.max(1, total)) * 100);
-        if (this._winProgLbl) this._winProgLbl.string = `${this._paintArt.title} · ${pct}%`;
-        if (this._winProgFill) {
-            this._winProgFill.setScale(Math.max(0.05, Math.min(1, this._paintCurIndex / Math.max(1, total))), 1, 1);
+        if (this._paintProgLbl) this._paintProgLbl.string = `Completion: ${pct}%`;
+        if (this._paintProgFill) {
+            this._paintProgFill.setScale(Math.max(0.05, Math.min(1, this._paintCurIndex / Math.max(1, total))), 1, 1);
         }
-        if (this._winShotLbl) {
-            this._winShotLbl.string = `HOLD TO SHOOT (${this._paintScrewsLeft})`;
+        if (this._paintShotLbl) {
+            this._paintShotLbl.string = `SHOOT SCREWS (${this._paintScrewsLeft})`;
         }
     }
 
-    /** Fires 1 screw from the bottom launcher into the next pixel cell (mirrors original GbzPaintLayer.shot) */
+    /** Fires 1 screw out of the cardboard crate into the next pixel cell (original GbzPaintLayer.shot) */
     private fireOnePaintScrew = (): void => {
-        if (!this._paintArt || !this._winArtCanvas || !this._winFlyLayer) {
+        if (!this._paintArt || !this._paintArtCanvas || !this._paintFlyLayer) {
             this.stopPaintShooting();
             return;
         }
@@ -520,7 +622,6 @@ export class UIManager extends Component {
             return;
         }
 
-        // If current artwork just hit 100%, auto-advance to next unfinished artwork seamlessly
         if (this._paintCurIndex >= this._paintArt.cells.length) {
             const nextArt = PIXEL_GALLERY.find((a) => !PixelGalleryService.isCompleted(a.id));
             if (!nextArt) {
@@ -531,30 +632,35 @@ export class UIManager extends Component {
             this._paintArt = nextArt;
             PixelGalleryService.setActiveArt(nextArt.id);
             this._paintCurIndex = PixelGalleryService.getFilledCount(nextArt.id);
-            this.drawPixelArtStatic(this._winArtCanvas, nextArt, this._paintCurIndex, 32, 30);
+            this.drawPixelArtStatic(this._paintArtCanvas, nextArt, this._paintCurIndex, 40, 37);
+        }
+
+        // Remove 1 screw from the visible pile inside the crate so the crate empties out!
+        if (this._paintBoxPile && this._paintBoxPile.children.length > 0) {
+            this._paintBoxPile.children[this._paintBoxPile.children.length - 1].destroy();
         }
 
         const art = this._paintArt;
         const idx = this._paintCurIndex;
         const cell = art.cells[idx];
-        const cellStep = 32;
-        const screwSize = 30;
+        const cellStep = 40;
+        const screwSize = 37;
         const half = ((art.gridSize - 1) * cellStep) / 2;
         const tx = cell.col * cellStep - half;
         const ty = half - cell.row * cellStep;
 
-        // Spawn flying screw from bottom pile -> shoots into (tx, ty) in 0.18s!
-        const fly = this.makeSpriteNode(`shot_${idx}`, this._winFlyLayer, `gbz_screw${cell.colorId}`, 44, 44);
-        fly.setPosition((Math.random() - 0.5) * 180, -300, 0);
+        // Shoot from cardboard crate mouth (y = -450 relative to wood frame center) -> (tx, ty)
+        const fly = this.makeSpriteNode(`shot_${idx}`, this._paintFlyLayer, `gbz_screw${cell.colorId}`, 46, 46);
+        fly.setPosition((Math.random() - 0.5) * 120, -455, 0);
         fly.angle = Math.random() * 360;
 
         AudioManager.ins.play(AudioClips.SCREW_OUT);
 
-        const targetCanvas = this._winArtCanvas;
+        const targetCanvas = this._paintArtCanvas;
         tween(fly)
-            .to(0.18, {
+            .to(0.20, {
                 position: new Vec3(tx, ty, 0),
-                scale: new Vec3(screwSize / 44, screwSize / 44, 1),
+                scale: new Vec3(screwSize / 46, screwSize / 46, 1),
                 angle: 0,
             }, { easing: 'quadOut' })
             .call(() => {
@@ -566,25 +672,21 @@ export class UIManager extends Component {
             })
             .start();
 
-        // Advance persistent state immediately
         this._paintCurIndex += 1;
         this._paintScrewsLeft -= 1;
         DataManager.ins.gallery.filledCounts[art.id] = this._paintCurIndex;
 
-        // Check artwork 100% completion!
         if (this._paintCurIndex >= art.cells.length && !DataManager.ins.gallery.claimedRewards.includes(art.id)) {
             DataManager.ins.gallery.claimedRewards.push(art.id);
             DataManager.ins.skillCounts.slot += 1;
             DataManager.ins.skillCounts.clear += 1;
             DataManager.ins.skillCounts.melt += 1;
             AudioManager.ins.play(AudioClips.BOX_FULL);
-            if (this._winTitleLbl) this._winTitleLbl.string = 'ARTWORK COMPLETE!';
-            if (this._winStatusLbl) this._winStatusLbl.string = `${art.title} saved to My Art! (+1 All Boosters)`;
             this.showToast(`${art.title} Complete! Saved to My Art!`);
         }
 
         DataManager.ins.save();
-        this.updateWinPaintUI();
+        this.updatePaintUI();
 
         if (this._paintScrewsLeft <= 0) {
             this.finishPaintShooting();
@@ -593,15 +695,13 @@ export class UIManager extends Component {
 
     private finishPaintShooting(): void {
         this.stopPaintShooting();
-        if (this._winShotBtn) this._winShotBtn.active = false;
-        if (this._winNextBtn) {
-            this._winNextBtn.active = true;
-            this._winNextBtn.setScale(Vec3.ZERO);
-            tween(this._winNextBtn).to(0.24, { scale: Vec3.ONE }, { easing: 'backOut' }).start();
-        }
-        if (this._winStatusLbl && this._paintArt && this._paintCurIndex < this._paintArt.cells.length) {
-            const pct = Math.round((this._paintCurIndex / this._paintArt.cells.length) * 100);
-            this._winStatusLbl.string = `${this._paintArt.title} · ${pct}% Complete!`;
+        if (this._paintBoxPile) this._paintBoxPile.removeAllChildren();
+        if (this._paintTipLbl) this._paintTipLbl.node.active = false;
+        if (this._paintShotBtn) this._paintShotBtn.active = false;
+        if (this._paintNextBtn) {
+            this._paintNextBtn.active = true;
+            this._paintNextBtn.setScale(Vec3.ZERO);
+            tween(this._paintNextBtn).to(0.24, { scale: Vec3.ONE }, { easing: 'backOut' }).start();
         }
     }
 
@@ -847,10 +947,12 @@ export class UIManager extends Component {
         this.setProgress(0);
     }
 
-    public showWin(): void {
+    public showWin(totalScrews = 15): void {
         this.hidePopups();
+        if (this._winCountLbl) {
+            this._winCountLbl.string = `Awesome! Collected ${totalScrews} Screws!`;
+        }
         if (this._winNode) this._winNode.active = true;
-        this.initWinPaintCeremony();
     }
 
     public showLose(): void {
@@ -869,8 +971,10 @@ export class UIManager extends Component {
     }
 
     public hidePopups(): void {
+        this.stopPaintShooting();
         if (this._pauseNode) this._pauseNode.active = false;
         if (this._winNode) this._winNode.active = false;
+        if (this._paintNode) this._paintNode.active = false;
         if (this._loseNode) this._loseNode.active = false;
         if (this._settingsNode) this._settingsNode.active = false;
         if (this._galleryNode) this._galleryNode.active = false;

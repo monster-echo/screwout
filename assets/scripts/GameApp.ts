@@ -78,7 +78,7 @@ export class GameApp extends Component {
         this._levelCtrl = stageNode.addComponent(LevelController);
         this._levelCtrl.setupContainers({
             onProgressChanged: (p) => this._uiMgr?.setProgress(p),
-            onWin: () => this._uiMgr?.showWin(),
+            onWin: (totalScrews) => this._uiMgr?.showWin(totalScrews),
             onLoseFull: () => this._uiMgr?.showLose(),
             onToast: (m) => this._uiMgr?.showToast(m),
             onCoinsChanged: () => this._uiMgr?.refreshHeader(),
