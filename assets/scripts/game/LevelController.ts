@@ -1519,7 +1519,6 @@ export class LevelController extends Component {
                 DataManager.ins.isSkill = true;
                 DataManager.ins.skillIndex = SkillType.SMASH_BOARD;
                 this._events?.onSmashModeChanged(true);
-                this._events?.onToast('Tap any board to melt it!');
             }
             this._events?.onCoinsChanged();
         };
