@@ -811,7 +811,6 @@ export class LevelController extends Component {
                     this._compNum++;
                     this._events?.onCoinsChanged();
                     this.showFlyGold(boxRef.node);
-                    this.showBoxCelebration(boxRef.node, colorId);
                     AudioManager.ins.play(AudioClips.BOX_FULL);
                     this.updateProgress();
                     if (preNextColor > 0) {
@@ -901,7 +900,6 @@ export class LevelController extends Component {
                         this._compNum++;
                         this._events?.onCoinsChanged();
                         this.showFlyGold(box.node);
-                        this.showBoxCelebration(box.node, cId);
                         AudioManager.ins.play(AudioClips.BOX_FULL);
                         this.updateProgress();
                         this.onBoxRefresh(box, -1, false);
@@ -949,7 +947,6 @@ export class LevelController extends Component {
                     this._compNum++;
                     this._events?.onCoinsChanged();
                     this.showFlyGold(box.node);
-                    this.showBoxCelebration(box.node, box.colorId);
                     AudioManager.ins.play(AudioClips.BOX_FULL);
                     this.updateProgress();
                     this.onBoxRefresh(box, -1, false);
@@ -1171,9 +1168,6 @@ export class LevelController extends Component {
         const endWorld = targetNode.getComponent(UITransform)!.convertToWorldSpaceAR(Vec3.ZERO);
         const endLocal = fxUi.convertToNodeSpaceAR(endWorld);
 
-        // Burst crisp unscrew sparks at the vacated board hole
-        this.showUnscrewSparks(startLocal, colorId);
-
         const mover = new Node('screw_fly_3d');
         mover.setParent(this._fxLayer);
         mover.setPosition(startLocal);
@@ -1252,7 +1246,6 @@ export class LevelController extends Component {
                         tween(mover)
                             .to(0.12, { position: endLocal, scale: new Vec3(0.96, 0.96, 1) }, { easing: 'quadIn' })
                             .call(() => {
-                                this.showLockInRing(endLocal, colorId);
                                 if (mover.isValid) mover.destroy();
                                 onDone();
                             })
@@ -1261,116 +1254,6 @@ export class LevelController extends Component {
                     .start();
             })
             .start();
-    }
-
-    /** Unmistakable, crisp tap-screw feedback: bright dual shockwave rings + 8 star sparks! */
-    private showUnscrewSparks(localPos: Vec3, colorId: number): void {
-        if (!this._fxLayer) return;
-        const hex = SCREW_FALLBACK_COLORS[colorId] || '#fde047';
-
-        // 1. Bright white inner flash + expanding outer colored shockwave ring
-        const flash = new Node('tap_flash');
-        flash.setParent(this._fxLayer);
-        flash.setPosition(localPos);
-        const fg = flash.addComponent(Graphics);
-        fg.fillColor = new Color(255, 255, 255, 210);
-        fg.circle(0, 0, 26);
-        fg.fill();
-        const fop = flash.addComponent(UIOpacity);
-        fop.opacity = 230;
-        flash.setScale(0.5, 0.5, 1);
-        tween(flash).to(0.22, { scale: new Vec3(1.6, 1.6, 1) }, { easing: 'quadOut' }).start();
-        tween(fop).to(0.22, { opacity: 0 }).call(() => { if (flash.isValid) flash.destroy(); }).start();
-
-        const ring = new Node('unscrew_ring');
-        ring.setParent(this._fxLayer);
-        ring.setPosition(localPos);
-        const g = ring.addComponent(Graphics);
-        g.strokeColor = Color.WHITE.clone();
-        g.lineWidth = 6;
-        g.circle(0, 0, 28);
-        g.stroke();
-        g.strokeColor = new Color().fromHEX(hex);
-        g.lineWidth = 3.5;
-        g.circle(0, 0, 32);
-        g.stroke();
-        const op = ring.addComponent(UIOpacity);
-        op.opacity = 255;
-        ring.setScale(0.55, 0.55, 1);
-        tween(ring).to(0.32, { scale: new Vec3(1.95, 1.95, 1) }, { easing: 'quadOut' }).start();
-        tween(op).to(0.32, { opacity: 0 }).call(() => { if (ring.isValid) ring.destroy(); }).start();
-
-        // 2. 8 bright radial sparkle streaks bursting out around the screw
-        for (let i = 0; i < 8; i++) {
-            const ang = (Math.PI * 2 * i) / 8 + Math.random() * 0.25;
-            const dist = 48 + Math.random() * 28;
-            const spark = new Node(`sp_${i}`);
-            spark.setParent(this._fxLayer);
-            spark.setPosition(localPos);
-            spark.angle = (ang * 180) / Math.PI;
-            const sg = spark.addComponent(Graphics);
-            sg.fillColor = i % 2 === 0 ? Color.WHITE.clone() : new Color().fromHEX('#fde047');
-            sg.roundRect(-9, -3.5, 18, 7, 3);
-            sg.fill();
-            const sop = spark.addComponent(UIOpacity);
-            sop.opacity = 255;
-            const tx = localPos.x + Math.cos(ang) * dist;
-            const ty = localPos.y + Math.sin(ang) * dist;
-            tween(spark)
-                .to(0.32, { position: new Vec3(tx, ty, 0), scale: new Vec3(0.25, 0.25, 1) }, { easing: 'quadOut' })
-                .start();
-            tween(sop).to(0.32, { opacity: 0 }).call(() => { if (spark.isValid) spark.destroy(); }).start();
-        }
-    }
-
-    /** Crisp lock-in ring flash when screw seats into target box/tray */
-    private showLockInRing(localPos: Vec3, colorId: number): void {
-        if (!this._fxLayer) return;
-        const ring = new Node('lock_ring');
-        ring.setParent(this._fxLayer);
-        ring.setPosition(localPos);
-        const g = ring.addComponent(Graphics);
-        g.strokeColor = Color.WHITE.clone();
-        g.lineWidth = 3.5;
-        g.circle(0, 0, 18);
-        g.stroke();
-        const op = ring.addComponent(UIOpacity);
-        op.opacity = 230;
-        ring.setScale(0.7, 0.7, 1);
-        tween(ring).to(0.2, { scale: new Vec3(1.55, 1.55, 1) }, { easing: 'quadOut' }).start();
-        tween(op).to(0.2, { opacity: 0 }).call(() => { if (ring.isValid) ring.destroy(); }).start();
-    }
-
-    /** Colorful confetti burst when a 3-screw collector box completes! */
-    private showBoxCelebration(fromBoxNode: Node, colorId: number): void {
-        if (!this._fxLayer) return;
-        const fxUi = this._fxLayer.getComponent(UITransform);
-        const fromUi = fromBoxNode.getComponent(UITransform);
-        if (!fxUi || !fromUi) return;
-        const origin = fxUi.convertToNodeSpaceAR(fromUi.convertToWorldSpaceAR(Vec3.ZERO));
-        const colors = ['#fde047', '#38bdf8', '#4ade80', '#fb7185', '#c084fc', SCREW_FALLBACK_COLORS[colorId] || '#ffffff'];
-
-        for (let i = 0; i < 12; i++) {
-            const p = new Node(`conf_${i}`);
-            p.setParent(this._fxLayer);
-            p.setPosition(origin);
-            const g = p.addComponent(Graphics);
-            g.fillColor = new Color().fromHEX(colors[i % colors.length]);
-            g.roundRect(-6, -4, 12, 8, 2);
-            g.fill();
-            const op = p.addComponent(UIOpacity);
-            op.opacity = 255;
-
-            const ang = (Math.PI * 2 * i) / 12 + (Math.random() - 0.5) * 0.35;
-            const r = 70 + Math.random() * 65;
-            const tx = origin.x + Math.cos(ang) * r;
-            const ty = origin.y + Math.sin(ang) * r + 25;
-            tween(p)
-                .to(0.32, { position: new Vec3(tx, ty, 0), angle: (Math.random() > 0.5 ? 1 : -1) * 320 }, { easing: 'quadOut' })
-                .to(0.28, { position: new Vec3(tx, ty - 45, 0), scale: new Vec3(0.3, 0.3, 1) }, { easing: 'quadIn' })
-                .start();
-            tween(op).delay(0.32).to(0.28, { opacity: 0 }).call(() => { if (p.isValid) p.destroy(); }).start();
-        }
     }
 
     /** Original GbzLvNew.showFlyGold: 3 items fly along a Bezier arc with ±360° spin to c_item (cardboard box) */
