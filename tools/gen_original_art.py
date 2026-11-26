@@ -609,18 +609,51 @@ def make_3d_ui_and_backgrounds():
 
     make_3d_logo()
 
-    # 12. Clean sparkling touch Spine atlas (straight alpha, golden-white stars!)
+    # 12. Clean sparkling touch Spine atlas matching EXACT touch.atlas UV regions (128x64):
+    # - star: xy=(2,2)   size=(50,50)  -> crisp 4-point diamond sparkle star
+    # - glow: xy=(54,12) size=(40,40)  -> smooth radial golden-white glow orb
+    # - lizi: xy=(96,24) size=(28,28)  -> crisp bright particle orb
     if os.path.exists(TOUCH_PNG):
-        t_im = Image.open(TOUCH_PNG).convert("RGBA")
-        tw, th = t_im.size
-        clean = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
-        cd = ImageDraw.Draw(clean)
-        # Bright golden-white sparkle burst centered in the atlas region
-        cx, cy = tw // 2, th // 2
-        for rad, alp in [(min(tw, th) // 2 - 4, 45), (min(tw, th) // 3, 120), (min(tw, th) // 5, 220)]:
-            cd.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], fill=(255, 248, 196, alp))
-        clean = clean.filter(ImageFilter.GaussianBlur(3))
-        clean.save(TOUCH_PNG)
+        atlas_im = Image.new("RGBA", (128, 64), (0, 0, 0, 0))
+
+        # 1) star (50x50 at 2,2) — rendered at 4x supersampling for razor-sharp points
+        st = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
+        sd = ImageDraw.Draw(st)
+        # Soft outer warm gold aura
+        sd.polygon([(100, 12), (124, 76), (188, 100), (124, 124), (100, 188), (76, 124), (12, 100), (76, 76)], fill=(253, 224, 71, 220))
+        st = st.filter(ImageFilter.GaussianBlur(4))
+        sd2 = ImageDraw.Draw(st)
+        # Crisp pure-white inner 4-point star
+        sd2.polygon([(100, 18), (118, 82), (182, 100), (118, 118), (100, 182), (82, 118), (18, 100), (82, 82)], fill=(255, 255, 255, 255))
+        atlas_im.alpha_composite(st.resize((50, 50), Image.Resampling.LANCZOS), (2, 2))
+
+        # 2) glow (40x40 at 54,12) — smooth radial falloff to alpha=0 at borders (zero square edge!)
+        gl = Image.new("RGBA", (40, 40), (0, 0, 0, 0))
+        gpx = gl.load()
+        for y in range(40):
+            for x in range(40):
+                dx = (x - 19.5) / 18.5
+                dy = (y - 19.5) / 18.5
+                r = math.sqrt(dx * dx + dy * dy)
+                if r < 1.0:
+                    a = int(240 * ((1.0 - r) ** 1.8))
+                    gpx[x, y] = (255, 248, 196, a)
+        atlas_im.alpha_composite(gl, (54, 12))
+
+        # 3) lizi (28x28 at 96,24) — crisp sparkling particle dot
+        lz = Image.new("RGBA", (28, 28), (0, 0, 0, 0))
+        lpx = lz.load()
+        for y in range(28):
+            for x in range(28):
+                dx = (x - 13.5) / 12.5
+                dy = (y - 13.5) / 12.5
+                r = math.sqrt(dx * dx + dy * dy)
+                if r < 1.0:
+                    a = int(255 * ((1.0 - r) ** 1.25))
+                    lpx[x, y] = (255, 245, 165, a)
+        atlas_im.alpha_composite(lz, (96, 24))
+
+        atlas_im.save(TOUCH_PNG)
 
 
 def main():
