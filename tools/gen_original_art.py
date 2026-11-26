@@ -31,20 +31,20 @@ SRC_POTION = os.path.join(BRAIN, "potion_3d_1795665795958.jpg")
 SRC_BROOM = os.path.join(BRAIN, "magic_whisk_broom_icon_1795665792684.jpg")
 SRC_COIN = os.path.join(BRAIN, "golden_star_coin_icon_1795665797558.jpg")
 
-# 11 distinct jewel-tone HSV targets (hue in 0..1, sat_scale, val_scale)
+# 10 maximally distinct, zero-ambiguity casual puzzle colors (no duplicate greens or muddy browns!)
 # Source master is vivid crimson red (hue ~ 0.0 / 0.99)
 COLOR_TARGETS = {
-    0:  (0.60, 0.12, 0.88),  # Machined Silver-Slate (neutral)
-    1:  (0.99, 1.02, 1.02),  # Ruby Red
-    2:  (0.125, 1.05, 1.18), # Sunshine Gold-Yellow
-    3:  (0.37, 0.96, 1.00),  # Emerald Green
-    4:  (0.60, 1.00, 1.02),  # Sapphire Blue
-    5:  (0.77, 0.92, 1.04),  # Royal Amethyst Purple
-    6:  (0.065, 1.05, 1.10), # Tangerine Orange
-    7:  (0.90, 0.95, 1.10),  # Magenta Rose Pink
-    8:  (0.51, 0.96, 1.06),  # Crystal Cyan / Turquoise
-    9:  (0.24, 0.98, 1.10),  # Fresh Lime Green
-    10: (0.04, 0.65, 0.72),  # Warm Bronze / Espresso
+    0:  (0.60, 0.10, 0.95),  # Neutral Silver (fallback)
+    1:  (0.99, 1.05, 1.00),  # 1: Crimson Red
+    2:  (0.145, 1.08, 1.38), # 2: Bright Lemon Yellow
+    3:  (0.38, 1.02, 0.94),  # 3: Emerald Green (ONLY green!)
+    4:  (0.64, 1.06, 0.98),  # 4: Deep Royal Blue
+    5:  (0.77, 0.96, 1.06),  # 5: Vivid Royal Purple
+    6:  (0.072, 1.08, 1.24), # 6: Bright Tangerine Orange
+    7:  (0.915, 0.68, 1.32), # 7: Bright Bubblegum Pink
+    8:  (0.515, 0.88, 1.28), # 8: Bright Ice Cyan
+    9:  (0.58, 0.05, 1.42),  # 9: Glossy Pearl White / Silver (replaces duplicate lime-green!)
+    10: (0.60, 0.14, 0.42),  # 10: Glossy Obsidian Charcoal (replaces muddy brown!)
 }
 
 
