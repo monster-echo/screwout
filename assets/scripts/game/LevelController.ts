@@ -30,7 +30,7 @@ import {
     SCREW_FALLBACK_COLORS,
     SkillType,
 } from '../core/GameTypes';
-import { DataManager } from '../core/DataManager';
+import { DataManager, ECONOMY } from '../core/DataManager';
 import { AudioManager } from '../core/AudioManager';
 import { ResManager } from '../core/ResManager';
 import { MonetizationManager } from '../core/MonetizationManager';
@@ -837,12 +837,14 @@ export class LevelController extends Component {
                 targetSlot.active = true;
                 if (willFull || (boxRef.checkFull() && boxRef.dataAfterAni === null)) {
                     boxRef.nextIndex = -1;
-                    DataManager.ins.addCoins(5);
+                    this._compNum++;
+                    if (this._compNum % ECONOMY.BOXES_PER_COIN === 0) {
+                        DataManager.ins.addCoins(1);
+                    }
                     this._events?.onCoinsChanged();
                     this.showFlyGold(boxRef.node);
                     this.showBoxCelebration(boxRef.node, colorId);
                     AudioManager.ins.play(AudioClips.BOX_FULL);
-                    this._compNum++;
                     this.updateProgress();
                     if (preNextColor > 0) {
                         this._shengYuBoxCount++;
@@ -928,11 +930,14 @@ export class LevelController extends Component {
                     AudioManager.ins.play(AudioClips.SCREW_IN);
                     slot.active = true;
                     if (box.checkFull()) {
-                        DataManager.ins.addCoins(5);
+                        this._compNum++;
+                        if (this._compNum % ECONOMY.BOXES_PER_COIN === 0) {
+                            DataManager.ins.addCoins(1);
+                        }
                         this._events?.onCoinsChanged();
                         this.showFlyGold(box.node);
+                        this.showBoxCelebration(box.node, cId);
                         AudioManager.ins.play(AudioClips.BOX_FULL);
-                        this._compNum++;
                         this.updateProgress();
                         this.onBoxRefresh(box, -1, false);
                     }
@@ -976,11 +981,14 @@ export class LevelController extends Component {
                     }
                 }
                 if (box.checkFull()) {
-                    DataManager.ins.addCoins(5);
+                    this._compNum++;
+                    if (this._compNum % ECONOMY.BOXES_PER_COIN === 0) {
+                        DataManager.ins.addCoins(1);
+                    }
                     this._events?.onCoinsChanged();
                     this.showFlyGold(box.node);
+                    this.showBoxCelebration(box.node, box.colorId);
                     AudioManager.ins.play(AudioClips.BOX_FULL);
-                    this._compNum++;
                     this.updateProgress();
                     this.onBoxRefresh(box, -1, false);
                 } else {
@@ -1526,6 +1534,9 @@ export class LevelController extends Component {
         if (DataManager.ins.getSkillCount(skill) > 0) {
             DataManager.ins.consumeSkill(skill);
             execute();
+        } else if (DataManager.ins.spendCoins(ECONOMY.COST_BOOSTER)) {
+            this._events?.onToast(`Booster unlocked (-${ECONOMY.COST_BOOSTER} Coins)`);
+            execute();
         } else {
             MonetizationManager.ins.showRewardedAd('skill_refill', execute);
         }
@@ -1534,12 +1545,23 @@ export class LevelController extends Component {
     public onBoxLockClick(box: TargetBox): void {
         if (DataManager.ins.status !== GameStatus.RUNNING || this._isOver) return;
         if (!box.isLock()) return;
-        MonetizationManager.ins.showRewardedAd('unlock_box', () => {
+
+        const doUnlock = (msg: string) => {
             if (!box.isLock()) return;
             AudioManager.ins.play(AudioClips.SKILL_UNLOCK);
             this.onBoxRefresh(box, -1, true);
-            this._events?.onToast('Extra box unlocked!');
-        });
+            this._events?.onCoinsChanged();
+            this._events?.onToast(msg);
+        };
+
+        // Dual-track: spend Coins first if player has enough, otherwise Rewarded Ad!
+        if (DataManager.ins.spendCoins(ECONOMY.COST_UNLOCK_BOX)) {
+            doUnlock(`Extra box unlocked (-${ECONOMY.COST_UNLOCK_BOX} Coins)`);
+        } else {
+            MonetizationManager.ins.showRewardedAd('unlock_box', () => {
+                doUnlock('Extra box unlocked (AD)!');
+            });
+        }
     }
 
     public unlockNextBox(): void {

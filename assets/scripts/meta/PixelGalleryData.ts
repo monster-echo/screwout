@@ -207,9 +207,7 @@ export class PixelGalleryService {
         if (nextCount >= art.cells.length && !DataManager.ins.gallery.claimedRewards.includes(artId)) {
             DataManager.ins.gallery.claimedRewards.push(artId);
             DataManager.ins.addCoins(art.rewardCoins);
-            DataManager.ins.skillCounts.slot += 1;
             DataManager.ins.skillCounts.clear += 1;
-            DataManager.ins.skillCounts.melt += 1;
             justCompleted = true;
             rewardCoins = art.rewardCoins;
         }

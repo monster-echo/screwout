@@ -1,6 +1,29 @@
 import { sys } from 'cc';
 import { GameStatus, SkillType, TOTAL_LEVELS } from './GameTypes';
 
+export const ECONOMY = {
+    STARTER_COINS: 220,
+    STARTER_BOLTS: 15,
+    STARTER_BOOSTERS: 2,
+    BOXES_PER_COIN: 4,      // +1 Coin every 4 completed boxes (~10-18C mid-level drip)
+    WIN_BASE_COINS: 30,
+    DAILY_WIN_COINS: 90,
+    WIN_BOLTS: 8,
+    DAILY_WIN_BOLTS: 16,
+    STREAK_BONUS_PER_WIN: 5,
+    STREAK_BONUS_MAX: 15,
+    COST_UNLOCK_BOX: 80,
+    COST_BOOSTER: 60,
+    COST_REVIVE: 100,
+} as const;
+
+export const ONBOARDING_MILESTONES: Record<number, { coins: number; bonusSkill?: 'slot' | 'clear' | 'melt' }> = {
+    1: { coins: 40 },
+    2: { coins: 50 },
+    3: { coins: 50 },
+    4: { coins: 60 },
+};
+
 export interface SkillInventory {
     slot: number;
     clear: number;
@@ -29,6 +52,7 @@ interface SavePayload {
     noAdsPurchased: boolean;
     skillCounts: SkillInventory;
     dailyCompletedDates: string[];
+    claimedMilestones: number[];
     gallery: GalleryProgress;
 }
 
@@ -46,8 +70,8 @@ export class DataManager {
 
     public level = 1;           // 1-based level number (maps to lv_0..lv_100)
     public maxLevel = 1;
-    public coins = 120;
-    public bolts = 20;          // Collected screws currency for Pixel Art Gallery
+    public coins: number = ECONOMY.STARTER_COINS;
+    public bolts: number = ECONOMY.STARTER_BOLTS;  // Collected screws currency for Pixel Art Gallery
     public winStreak = 0;       // Consecutive wins (grants start-of-level buffs)
     public bestStreak = 0;
     public totalScore = 0;      // Used for Global & Country Leaderboard
@@ -59,12 +83,13 @@ export class DataManager {
     public noAdsPurchased = false;
 
     public skillCounts: SkillInventory = {
-        slot: 2,
-        clear: 2,
-        melt: 2,
+        slot: ECONOMY.STARTER_BOOSTERS,
+        clear: ECONOMY.STARTER_BOOSTERS,
+        melt: ECONOMY.STARTER_BOOSTERS,
     };
 
     public dailyCompletedDates: string[] = [];
+    public claimedMilestones: number[] = [];
 
     public gallery: GalleryProgress = {
         activeArtId: 'lucky_cat',
@@ -81,7 +106,8 @@ export class DataManager {
     public isDailyMode = false;
     public activeDailyDateKey = '';
     public lastWinCoins = 30;
-    public lastWinBolts = 10;
+    public lastWinBolts = 12;
+    public lastMilestoneCoins = 0;
 
     public load(): void {
         try {
@@ -119,6 +145,9 @@ export class DataManager {
             if (Array.isArray(parsed.dailyCompletedDates)) {
                 this.dailyCompletedDates = parsed.dailyCompletedDates.filter((d) => typeof d === 'string').slice(-60);
             }
+            if (Array.isArray(parsed.claimedMilestones)) {
+                this.claimedMilestones = parsed.claimedMilestones.filter((n) => typeof n === 'number');
+            }
             if (parsed.gallery && typeof parsed.gallery === 'object') {
                 this.gallery = {
                     activeArtId: parsed.gallery.activeArtId || 'lucky_cat',
@@ -148,6 +177,7 @@ export class DataManager {
             noAdsPurchased: this.noAdsPurchased,
             skillCounts: this.skillCounts,
             dailyCompletedDates: this.dailyCompletedDates,
+            claimedMilestones: this.claimedMilestones,
             gallery: this.gallery,
         };
         try {
@@ -201,14 +231,25 @@ export class DataManager {
         return true;
     }
 
-    public recordWin(isDaily: boolean): { coins: number; bolts: number; score: number } {
+    public recordWin(isDaily: boolean): { coins: number; bolts: number; score: number; milestoneCoins: number } {
         this.winStreak += 1;
         if (this.winStreak > this.bestStreak) {
             this.bestStreak = this.winStreak;
         }
-        const streakBonusCoins = Math.min(30, this.winStreak * 5);
-        const coins = (isDaily ? 100 : 30) + streakBonusCoins;
-        const bolts = isDaily ? 20 : 12;
+        const streakBonusCoins = Math.min(ECONOMY.STREAK_BONUS_MAX, this.winStreak * ECONOMY.STREAK_BONUS_PER_WIN);
+        let milestoneCoins = 0;
+        if (!isDaily && !this.claimedMilestones.includes(this.level)) {
+            const ms = ONBOARDING_MILESTONES[this.level];
+            if (ms) {
+                this.claimedMilestones.push(this.level);
+                milestoneCoins = ms.coins;
+                if (ms.bonusSkill) {
+                    this.skillCounts[ms.bonusSkill] += 1;
+                }
+            }
+        }
+        const coins = (isDaily ? ECONOMY.DAILY_WIN_COINS : ECONOMY.WIN_BASE_COINS) + streakBonusCoins + milestoneCoins;
+        const bolts = isDaily ? ECONOMY.DAILY_WIN_BOLTS : ECONOMY.WIN_BOLTS;
         const score = (isDaily ? 250 : 100) + this.winStreak * 20;
 
         this.coins += coins;
@@ -216,12 +257,13 @@ export class DataManager {
         this.totalScore += score;
         this.lastWinCoins = coins;
         this.lastWinBolts = bolts;
+        this.lastMilestoneCoins = milestoneCoins;
 
         if (isDaily && this.activeDailyDateKey && !this.dailyCompletedDates.includes(this.activeDailyDateKey)) {
             this.dailyCompletedDates.push(this.activeDailyDateKey);
         }
         this.save();
-        return { coins, bolts, score };
+        return { coins, bolts, score, milestoneCoins };
     }
 
     public resetWinStreak(): void {
@@ -238,7 +280,7 @@ export class DataManager {
      * - Tier 3 (streak >= 3): +1 Extra Holding Slot + 3rd Target Box unlocked at start!
      */
     public getWinStreakTier(): number {
-        if (this.winStreak >= 3) return 3;
+        if (this.winStreak >= 5) return 3;
         if (this.winStreak >= 2) return 2;
         if (this.winStreak >= 1) return 1;
         return 0;

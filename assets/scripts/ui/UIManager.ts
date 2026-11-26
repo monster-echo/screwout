@@ -14,7 +14,7 @@ import {
     Widget,
 } from 'cc';
 import { AudioClips, SkillType } from '../core/GameTypes';
-import { DataManager } from '../core/DataManager';
+import { DataManager, ECONOMY } from '../core/DataManager';
 import { AudioManager } from '../core/AudioManager';
 import { ResManager } from '../core/ResManager';
 import { IAP_CATALOG, MonetizationManager } from '../core/MonetizationManager';
@@ -664,10 +664,10 @@ export class UIManager extends Component {
         revAdBtn.setPosition(0, -18, 0);
         this._loseReviveAdLbl = revAdBtn.getChildByName('Label')?.getComponent(Label) || null;
 
-        // Option 2: Coin Revive (50 Coins)
-        createButton('btn_revive_coin', card, 'REVIVE  (50 COINS)', 440, 78, '#f59e0b', () => {
+        // Option 2: Coin Revive (ECONOMY.COST_REVIVE Coins)
+        createButton('btn_revive_coin', card, `REVIVE  (${ECONOMY.COST_REVIVE} COINS)`, 440, 78, '#f59e0b', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
-            if (DataManager.ins.spendCoins(50)) {
+            if (DataManager.ins.spendCoins(ECONOMY.COST_REVIVE)) {
                 if (this._loseNode) this._loseNode.active = false;
                 this.refreshHeader();
                 this._actions?.onRevive();
@@ -966,7 +966,8 @@ export class UIManager extends Component {
             this._winStreakLbl.string = `WIN STREAK x${dm.winStreak}!`;
         }
         if (this._winRewardLbl) {
-            this._winRewardLbl.string = `+${dm.lastWinCoins} Coins   +${dm.lastWinBolts} Bolts`;
+            const msTag = dm.lastMilestoneCoins > 0 ? ` (incl. +${dm.lastMilestoneCoins} Bonus!)` : '';
+            this._winRewardLbl.string = `+${dm.lastWinCoins} Coins   +${dm.lastWinBolts} Bolts${msTag}`;
         }
         if (this._winDoubleBtn) this._winDoubleBtn.active = true;
         if (this._winNextLbl) {
@@ -1056,19 +1057,23 @@ export class UIManager extends Component {
             this._galleryBadgeLbl.string = `${PixelGalleryService.getCompletedTotal()} / ${PIXEL_GALLERY.length} Done`;
         }
 
-        // Update bottom skill count / AD badges (switch between green circle & amber AD pill)
+        // Update bottom skill count / Coin / AD badges
         const types: SkillType[] = [SkillType.UNLOCK_SLOT, SkillType.CLEAR_TRAY, SkillType.SMASH_BOARD];
         for (const t of types) {
             const lbl = this._skillBadgeLabels.get(t);
             const sp = this._skillBadgeSprites.get(t);
             if (!lbl) continue;
             const cnt = dm.getSkillCount(t);
-            lbl.string = cnt > 0 ? String(cnt) : 'AD';
+            if (cnt > 0) {
+                lbl.string = String(cnt);
+            } else {
+                lbl.string = dm.coins >= ECONOMY.COST_BOOSTER ? `${ECONOMY.COST_BOOSTER}C` : 'AD';
+            }
             if (sp) {
                 const sf = ResManager.ins.getUiSprite(cnt > 0 ? 'badge_count' : 'badge_ad');
                 if (sf) sp.spriteFrame = sf;
                 const ui = sp.node.getComponent(UITransform);
-                if (ui) ui.setContentSize(cnt > 0 ? 76 : 94, cnt > 0 ? 76 : 68);
+                if (ui) ui.setContentSize(cnt > 0 ? 76 : 96, cnt > 0 ? 76 : 68);
             }
         }
 
