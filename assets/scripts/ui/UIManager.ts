@@ -48,6 +48,7 @@ export class UIManager extends Component {
     private _collectBoxNode: Node | null = null;
     private _smashBanner: Node | null = null;
     private _skillBadgeLabels: Map<SkillType, Label> = new Map();
+    private _skillBadgeSprites: Map<SkillType, Sprite> = new Map();
 
     public get collectBoxNode(): Node | null {
         return this._collectBoxNode;
@@ -260,16 +261,21 @@ export class UIManager extends Component {
             const btn = this.makeSpriteNode(cfg.name, skillBar, 'skill_btn_bg', 281, 207);
             btn.setPosition(cfg.x, 0, 0);
 
-            const icon = this.makeSpriteFit('icon', btn, cfg.iconSprite, 108, 108);
+            const icon = this.makeSpriteFit('icon', btn, cfg.iconSprite, 106, 106);
             icon.setScale(cfg.iconScale, cfg.iconScale, 1);
-            icon.setPosition(0, 28, 0);
+            icon.setPosition(0, 30, 0);
 
-            const txtLbl = createLabel('txt', btn, cfg.label, 38, '#ffffff', 240, 52);
-            txtLbl.node.setPosition(0, -60, 0);
+            const txtLbl = createLabel('txt', btn, cfg.label, 31, '#ffffff', 220, 42);
+            txtLbl.isBold = true;
+            txtLbl.node.setPosition(0, -48, 0);
 
-            const badge = createPanel('plus', btn, 86, 60, '#22c55e', 255, 30);
-            badge.setPosition(114, 84, 0);
-            const countLbl = createLabel('cnt', badge, '2', 34, '#ffffff', 78, 44);
+            const badge = this.makeSpriteNode('plus', btn, 'badge_count', 76, 76);
+            badge.setPosition(116, 84, 0);
+            const badgeSp = badge.getComponent(Sprite);
+            if (badgeSp) this._skillBadgeSprites.set(cfg.type, badgeSp);
+            const countLbl = createLabel('cnt', badge, '2', 32, '#ffffff', 72, 42);
+            countLbl.isBold = true;
+            countLbl.node.setPosition(0, 2, 0);
             this._skillBadgeLabels.set(cfg.type, countLbl);
 
             this.bindTap(btn, () => {
@@ -1050,13 +1056,20 @@ export class UIManager extends Component {
             this._galleryBadgeLbl.string = `${PixelGalleryService.getCompletedTotal()} / ${PIXEL_GALLERY.length} Done`;
         }
 
-        // Update bottom skill count / AD badges
+        // Update bottom skill count / AD badges (switch between green circle & amber AD pill)
         const types: SkillType[] = [SkillType.UNLOCK_SLOT, SkillType.CLEAR_TRAY, SkillType.SMASH_BOARD];
         for (const t of types) {
             const lbl = this._skillBadgeLabels.get(t);
+            const sp = this._skillBadgeSprites.get(t);
             if (!lbl) continue;
             const cnt = dm.getSkillCount(t);
             lbl.string = cnt > 0 ? String(cnt) : 'AD';
+            if (sp) {
+                const sf = ResManager.ins.getUiSprite(cnt > 0 ? 'badge_count' : 'badge_ad');
+                if (sf) sp.spriteFrame = sf;
+                const ui = sp.node.getComponent(UITransform);
+                if (ui) ui.setContentSize(cnt > 0 ? 76 : 94, cnt > 0 ? 76 : 68);
+            }
         }
 
         this.renderActivePixelArt();

@@ -269,12 +269,44 @@ def make_3d_boxes_and_lids():
     bd.rectangle([130, 46, 148, 52], fill=(255, 255, 255, 255))
     locked_box.save(os.path.join(UI_ORIG_DIR, "解锁盒子.png"))
 
-    # Holding tray hole & screw core
+    # Holding tray hole & upgraded 3D titanium '+1 Slot' icon (gbz_screw_core.png)
     hole_big = draw_3d_socket_hole(72)
     hole_big.save(os.path.join(GAMES_DIR, "hole.png"))
-    hole_core = draw_3d_socket_hole(96)
-    hole_core.save(os.path.join(UI_ORIG_DIR, "gbz_screw_core.png"))
-    hole_core.save(os.path.join(GAMES_DIR, "gbz_screw_core.png"))
+
+    def make_3d_add_slot_icon():
+        S = 160
+        im = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        # Soft drop shadow
+        sh = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+        ImageDraw.Draw(sh).ellipse([20, 26, 140, 146], fill=(15, 23, 42, 75))
+        sh = sh.filter(ImageFilter.GaussianBlur(5))
+        im.alpha_composite(sh)
+        # Outer machined chrome/titanium 3D ring (vertical metallic gradient)
+        ring = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+        rd = ImageDraw.Draw(ring)
+        for y in range(18, 138):
+            t = (y - 18) / 120.0
+            v = int(248 - 105 * t + 32 * math.sin(t * math.pi * 2))
+            v = max(120, min(255, v))
+            rd.line([(18, y), (138, y)], fill=(v, min(255, v + 4), min(255, v + 12), 255))
+        rmask = Image.new("L", (S, S), 0)
+        ImageDraw.Draw(rmask).ellipse([18, 18, 138, 138], fill=255)
+        im.paste(ring, (0, 0), rmask)
+        d.ellipse([18, 18, 138, 138], outline=(100, 116, 139, 255), width=3)
+        # Inner bright chamfer + deep recessed navy-steel socket
+        d.ellipse([34, 34, 122, 122], fill=(30, 41, 59, 255), outline=(226, 232, 240, 220), width=3)
+        d.arc([36, 36, 120, 120], start=195, end=345, fill=(10, 15, 28, 230), width=6)
+        d.arc([38, 38, 118, 118], start=25, end=155, fill=(100, 116, 139, 170), width=4)
+        # Crisp glossy golden '+' emblem nested in lower-right of socket!
+        d.ellipse([96, 94, 148, 146], fill=(245, 158, 11, 255), outline=(255, 255, 255, 255), width=4)
+        d.rectangle([118, 106, 126, 134], fill=(255, 255, 255, 255))
+        d.rectangle([108, 116, 136, 124], fill=(255, 255, 255, 255))
+        return im.resize((128, 128), Image.Resampling.LANCZOS)
+
+    slot_ico = make_3d_add_slot_icon()
+    slot_ico.save(os.path.join(UI_ORIG_DIR, "gbz_screw_core.png"))
+    slot_ico.save(os.path.join(GAMES_DIR, "gbz_screw_core.png"))
 
 
 def make_glossy_acrylic_boards():
@@ -408,26 +440,65 @@ def make_3d_ui_and_backgrounds():
     d.rounded_rectangle([8, 6, 412, 112], radius=52, outline=(255, 255, 255, 210), width=4)
     play.save(os.path.join(UI_ORIG_DIR, "按键1.png"))
 
-    # 9. Rich Glossy 3D Sapphire Skill Button Base (skill_btn_bg.png, 281x207)
+    # 9. Royal-Match Style Pearl-Ivory 3D Ceramic Skill Button Base (skill_btn_bg.png, 281x207)
     sbtn = Image.new("RGBA", (281, 207), (0, 0, 0, 0))
+    # Soft ambient drop shadow
+    sh = Image.new("RGBA", (281, 207), (0, 0, 0, 0))
+    ImageDraw.Draw(sh).rounded_rectangle([12, 22, 269, 200], radius=38, fill=(30, 58, 138, 68))
+    sh = sh.filter(ImageFilter.GaussianBlur(6))
+    sbtn.alpha_composite(sh)
+
     sd = ImageDraw.Draw(sbtn)
-    sd.rounded_rectangle([6, 16, 275, 203], radius=34, fill=(23, 78, 166, 255))
+    # Cool silver-blue 3D extruded bottom lip
+    sd.rounded_rectangle([10, 16, 271, 194], radius=36, fill=(148, 163, 184, 255))
+    # Pearl-white to soft-ice vertical ceramic body
     sbody = Image.new("RGBA", (281, 207), (0, 0, 0, 0))
     sbd = ImageDraw.Draw(sbody)
-    for y in range(6, 188):
-        t = (y - 6) / 182.0
-        r = int(96 - 58 * t)
-        g = int(188 - 64 * t)
-        b = int(255 - 20 * t)
+    for y in range(6, 182):
+        t = (y - 6) / 176.0
+        r = int(255 - 18 * t)
+        g = int(255 - 13 * t)
+        b = int(255 - 3 * t)
         sbd.line([(0, y), (281, y)], fill=(r, g, b, 255))
     smask = Image.new("L", (281, 207), 0)
-    ImageDraw.Draw(smask).rounded_rectangle([8, 6, 273, 188], radius=32, fill=255)
+    ImageDraw.Draw(smask).rounded_rectangle([10, 6, 271, 182], radius=36, fill=255)
     sbtn.paste(sbody, (0, 0), smask)
-    sspec = Image.new("RGBA", (281, 207), (0, 0, 0, 0))
-    ImageDraw.Draw(sspec).rounded_rectangle([22, 14, 259, 86], radius=22, fill=(255, 255, 255, 76))
-    sbtn.alpha_composite(sspec)
-    sd.rounded_rectangle([8, 6, 273, 188], radius=32, outline=(255, 255, 255, 215), width=4)
+
+    # Subtle recessed sky-tint cradle behind icon
+    sd.rounded_rectangle([24, 18, 257, 134], radius=24, fill=(224, 242, 254, 155))
+    # Sleek sapphire-blue bottom nameplate ribbon for ultra-crisp label readability
+    sd.rounded_rectangle([24, 128, 257, 174], radius=18, fill=(37, 99, 235, 255))
+    sd.rounded_rectangle([28, 130, 253, 148], radius=12, fill=(96, 165, 250, 120))
+    # Crisp white outer rim highlight
+    sd.rounded_rectangle([10, 6, 271, 182], radius=36, outline=(255, 255, 255, 245), width=4)
     sbtn.save(os.path.join(UI_ORIG_DIR, "skill_btn_bg.png"))
+
+    # 9b. Glossy 3D Count Badge (Emerald Green Circle) & AD Badge (Warm Amber Pill)
+    def make_3d_badge(w, h, top_c, bot_c, sh_c):
+        im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        bsh = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        ImageDraw.Draw(bsh).rounded_rectangle([4, 8, w - 4, h - 2], radius=h // 2, fill=(15, 23, 42, 80))
+        bsh = bsh.filter(ImageFilter.GaussianBlur(3))
+        im.alpha_composite(bsh)
+        bd = ImageDraw.Draw(im)
+        bd.rounded_rectangle([4, 6, w - 4, h - 4], radius=(h - 10) // 2, fill=(*sh_c, 255))
+        grad = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(grad)
+        for y in range(4, h - 8):
+            t = (y - 4) / max(1, h - 12)
+            c = tuple(int(top_c[i] * (1 - t) + bot_c[i] * t) for i in range(3))
+            gd.line([(0, y), (w, y)], fill=(*c, 255))
+        m = Image.new("L", (w, h), 0)
+        ImageDraw.Draw(m).rounded_rectangle([5, 4, w - 5, h - 8], radius=(h - 12) // 2, fill=255)
+        im.paste(grad, (0, 0), m)
+        sp = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        ImageDraw.Draw(sp).rounded_rectangle([12, 7, w - 12, h // 2 - 2], radius=12, fill=(255, 255, 255, 95))
+        im.alpha_composite(sp)
+        bd.rounded_rectangle([5, 4, w - 5, h - 8], radius=(h - 12) // 2, outline=(255, 255, 255, 255), width=4)
+        return im
+
+    make_3d_badge(76, 76, (52, 211, 153), (16, 185, 129), (5, 150, 105)).save(os.path.join(UI_ORIG_DIR, "badge_count.png"))
+    make_3d_badge(96, 70, (251, 191, 36), (234, 88, 12), (180, 83, 9)).save(os.path.join(UI_ORIG_DIR, "badge_ad.png"))
 
     # 10. 4x Supersampled 3D Extruded Golden Logo ("SCREW JAM")
     def make_3d_logo():
