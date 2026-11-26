@@ -252,31 +252,23 @@ if [[ -z "$WORKSPACE" ]]; then
 fi
 
 if [[ "$STAGE" == "sim" ]]; then
-	echo "== unsigned simulator compile (CI dry run)"
-	BUILD_ARGS=(
-		-workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release
-		-sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
-		IPHONEOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET"
-		OTHER_CPLUSPLUSFLAGS="$IOS_EXTRA_CXXFLAGS"
-		OTHER_LDFLAGS="$IOS_EXTRA_LDFLAGS"
-		ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES=YES
-		CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
-		PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
-	)
-	if ! xcodebuild "${BUILD_ARGS[@]}" build; then
-		echo "simulator compile failed; retrying as unsigned device build"
-		xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release \
-			-sdk iphoneos -destination 'generic/platform=iOS' \
-			IPHONEOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
-			OTHER_CPLUSPLUSFLAGS="$IOS_EXTRA_CXXFLAGS" \
-			ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES=YES \
-			CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
-			PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" build
-	fi
+	# Unsigned DEVICE build, not simulator: the engine's vendored libwebp.a
+	# x86_64 slice lacks VP8 threading symbols and the CMake-generated sim
+	# target ignores an ARCHS override; arm64 device compiles everything and
+	# exercises the same link (Pods + Swift compat libs) the archive does.
+	echo "== unsigned device compile (CI dry run)"
+	xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release \
+		-sdk iphoneos -destination 'generic/platform=iOS' ARCHS=arm64 \
+		IPHONEOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
+		OTHER_CPLUSPLUSFLAGS="$IOS_EXTRA_CXXFLAGS" \
+		OTHER_LDFLAGS="$IOS_EXTRA_LDFLAGS" \
+		CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+		PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" build
 	echo
 	echo "STAGE=sim: compile OK (no signing attempted)."
 	exit 0
 fi
+
 
 echo "== archive (automatic signing + ASC API key)"
 SIGNING_ARGS=(
