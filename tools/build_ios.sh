@@ -388,6 +388,8 @@ cp "$PRIVACY" "$APP_BUNDLE/PrivacyInfo.xcprivacy"
 ICONSET="$ROOT/.tmp/appicon"
 rm -rf "$ICONSET" "$ROOT/.tmp/appicon-out"
 mkdir -p "$ICONSET/AppIcon.appiconset" "$ROOT/.tmp/appicon-out"
+python3 -m pip install --quiet --break-system-packages Pillow \
+		|| python3 -m pip install --quiet Pillow || true
 python3 - "$ICON_SRC" "$ICONSET/AppIcon.appiconset/icon_1024.png" <<'PY'
 import sys
 from PIL import Image
