@@ -18,7 +18,7 @@ import { DataManager } from '../core/DataManager';
 import { AudioManager } from '../core/AudioManager';
 import { ResManager } from '../core/ResManager';
 import { MonetizationManager } from '../core/MonetizationManager';
-import { PIXEL_GALLERY, PixelArtDef, PixelGalleryService } from '../meta/PixelGalleryData';
+import { PixelArtDef, PixelGalleryService } from '../meta/PixelGalleryData';
 import { createButton, createLabel, createPanel } from './UIHelper';
 
 const { ccclass } = _decorator;
@@ -64,6 +64,7 @@ export class UIManager extends Component {
     // Full-screen Paint Layer (matches original GbzPaintLayer)
     private _paintNode: Node | null = null;
     private _paintArtCanvas: Node | null = null;
+    private _paintFinishSprite: Sprite | null = null;
     private _paintFlyLayer: Node | null = null;
     private _paintBoxPile: Node | null = null;
     private _paintProgFill: Node | null = null;
@@ -73,6 +74,7 @@ export class UIManager extends Component {
     private _paintShotLbl: Label | null = null;
     private _paintNextBtn: Node | null = null;
     private _paintScrewsLeft = 0;
+    private _lastWonTotalScrews = 90;
     private _paintArt: PixelArtDef | null = null;
     private _paintCurIndex = 0;
     private _isShooting = false;
@@ -342,38 +344,50 @@ export class UIManager extends Component {
             .start();
     }
 
-    /** Render a pixel art mosaic into any canvas node at given cellStep & screwSize */
-    private drawPixelArtStatic(canvasNode: Node, art: PixelArtDef, filledCount: number, cellStep: number, screwSize: number): void {
+    /**
+     * Render HD 28x28 3D-screw pixel artwork using exact original architecture:
+     * 1. Clean warm-cream pegboard backdrop
+     * 2. Dashed outer contour sprite (`art_<id>_outline`)
+     * 3. Pre-rendered 3D-screw finish sprite (`art_<id>_finish`) with Sprite.Type.FILLED vertical reveal (60fps!)
+     * Returns the finish Sprite so GbzPaintLayer can animate fillRange smoothly during shooting.
+     */
+    private drawHDArtInFrame(canvasNode: Node, art: PixelArtDef, filledCount: number, sizePx: number): Sprite | null {
         canvasNode.removeAllChildren();
-        const half = ((art.gridSize - 1) * cellStep) / 2;
-        const pad = Math.round(half + cellStep * 0.85);
+        const half = sizePx / 2;
         const bgG = canvasNode.getComponent(Graphics) || canvasNode.addComponent(Graphics);
         bgG.clear();
-        bgG.fillColor = new Color(241, 245, 249, 255);
-        bgG.roundRect(-pad, -pad, pad * 2, pad * 2, 20);
+        bgG.fillColor = new Color(248, 246, 240, 255);
+        bgG.roundRect(-half, -half, sizePx, sizePx, 18);
         bgG.fill();
 
-        const holeSf = ResManager.ins.getGameSprite('hole');
-        for (let i = 0; i < art.cells.length; i++) {
-            const cell = art.cells[i];
-            const x = cell.col * cellStep - half;
-            const y = half - cell.row * cellStep;
-            if (i < filledCount) {
-                const s = this.makeSpriteNode(`px_${i}`, canvasNode, `gbz_screw${cell.colorId}`, screwSize, screwSize);
-                s.setPosition(x, y, 0);
-            } else {
-                const h = new Node(`empty_${i}`);
-                h.setParent(canvasNode);
-                h.setPosition(x, y, 0);
-                const ui = h.addComponent(UITransform);
-                ui.setContentSize(Math.round(screwSize * 0.65), Math.round(screwSize * 0.65));
-                const sp = h.addComponent(Sprite);
-                sp.sizeMode = Sprite.SizeMode.CUSTOM;
-                if (holeSf) sp.spriteFrame = holeSf;
-                const op = h.addComponent(UIOpacity);
-                op.opacity = 110;
-            }
+        const artSize = Math.round(sizePx * 0.90);
+
+        // 1. Dashed outer contour (xiankuang)
+        const outlineSf = ResManager.ins.getPaintSprite(`art_${art.id}_outline`);
+        if (outlineSf) {
+            const oNode = new Node('outline');
+            oNode.setParent(canvasNode);
+            oNode.addComponent(UITransform).setContentSize(artSize, artSize);
+            const oSp = oNode.addComponent(Sprite);
+            oSp.sizeMode = Sprite.SizeMode.CUSTOM;
+            oSp.spriteFrame = outlineSf;
         }
+
+        // 2. Pre-rendered 28x28 3D-screw finish image with top-to-bottom FILLED vertical reveal!
+        const finishSf = ResManager.ins.getPaintSprite(`art_${art.id}_finish`);
+        if (!finishSf) return null;
+
+        const fNode = new Node('finish');
+        fNode.setParent(canvasNode);
+        fNode.addComponent(UITransform).setContentSize(artSize, artSize);
+        const fSp = fNode.addComponent(Sprite);
+        fSp.sizeMode = Sprite.SizeMode.CUSTOM;
+        fSp.spriteFrame = finishSf;
+        fSp.type = Sprite.Type.FILLED;
+        fSp.fillType = Sprite.FillType.VERTICAL;
+        fSp.fillStart = 1;
+        fSp.fillRange = -PixelGalleryService.getVerticalFillRatio(art, filledCount);
+        return fSp;
     }
 
     private renderHomePixelArt(): void {
@@ -383,7 +397,7 @@ export class UIManager extends Component {
         const total = art.cells.length;
         const pct = Math.round((filled / Math.max(1, total)) * 100);
 
-        this.drawPixelArtStatic(this._pixelCanvasNode, art, filled, 40, 37);
+        this.drawHDArtInFrame(this._pixelCanvasNode, art, filled, 388);
 
         if (this._menuProgressLbl) {
             this._menuProgressLbl.string = `${art.title} · ${pct}%`;
@@ -532,7 +546,8 @@ export class UIManager extends Component {
             this._paintShotBtn?.setScale(0.94, 0.94, 1);
             this.fireOnePaintScrew();
             this.unschedule(this.fireOnePaintScrew);
-            this.schedule(this.fireOnePaintScrew, 0.065);
+            // Rapid machine-gun ASMR cadence (~31 screws/sec) matching original high-density feel!
+            this.schedule(this.fireOnePaintScrew, 0.032);
         });
         const stopShoot = () => {
             this._isShooting = false;
@@ -571,9 +586,10 @@ export class UIManager extends Component {
         this._paintNode.active = true;
 
         // Pick active unfinished artwork
+        const allArts = PixelGalleryService.getAllArts();
         let art = PixelGalleryService.getActiveArt();
         if (PixelGalleryService.isCompleted(art.id)) {
-            const nextArt = PIXEL_GALLERY.find((a) => !PixelGalleryService.isCompleted(a.id));
+            const nextArt = allArts.find((a) => !PixelGalleryService.isCompleted(a.id));
             if (nextArt) {
                 art = nextArt;
                 PixelGalleryService.setActiveArt(art.id);
@@ -581,17 +597,19 @@ export class UIManager extends Component {
         }
         this._paintArt = art;
         this._paintCurIndex = PixelGalleryService.getFilledCount(art.id);
-        this._paintScrewsLeft = Math.ceil(art.cells.length / 3);
+        // Shoot real screws collected from this level (min ~110 so even Lv 1 advances ~33% of a 334-screw HD artwork!)
+        this._paintScrewsLeft = Math.max(Math.ceil(art.cells.length / 3), Math.min(180, this._lastWonTotalScrews));
 
-        // Populate colorful 3D screws inside the shipping crate mouth
-        for (let i = 0; i < this._paintScrewsLeft; i++) {
+        // Populate visual cluster of colorful 3D screws inside the shipping crate mouth
+        const visualPileCount = Math.min(28, this._paintScrewsLeft);
+        for (let i = 0; i < visualPileCount; i++) {
             const cId = 1 + (i % 10);
-            const s = this.makeSpriteNode(`pile_${i}`, this._paintBoxPile, `gbz_screw${cId}`, 40, 40);
+            const s = this.makeSpriteNode(`pile_${i}`, this._paintBoxPile, `gbz_screw${cId}`, 38, 38);
             s.setPosition((Math.random() - 0.5) * 145, (Math.random() - 0.5) * 44, 0);
             s.angle = Math.random() * 360;
         }
 
-        this.drawPixelArtStatic(this._paintArtCanvas, art, this._paintCurIndex, 40, 37);
+        this._paintFinishSprite = this.drawHDArtInFrame(this._paintArtCanvas, art, this._paintCurIndex, 388);
         this.updatePaintUI();
 
         if (this._paintTipLbl) this._paintTipLbl.node.active = true;
@@ -610,9 +628,12 @@ export class UIManager extends Component {
         if (this._paintShotLbl) {
             this._paintShotLbl.string = `SHOOT SCREWS (${this._paintScrewsLeft})`;
         }
+        if (this._paintFinishSprite) {
+            this._paintFinishSprite.fillRange = -PixelGalleryService.getVerticalFillRatio(this._paintArt, this._paintCurIndex);
+        }
     }
 
-    /** Fires 1 screw out of the cardboard crate into the next pixel cell (original GbzPaintLayer.shot) */
+    /** Fires 1 screw out of the cardboard crate into the next 28x28 pixel cell (original GbzPaintLayer.shot) */
     private fireOnePaintScrew = (): void => {
         if (!this._paintArt || !this._paintArtCanvas || !this._paintFlyLayer) {
             this.stopPaintShooting();
@@ -624,7 +645,7 @@ export class UIManager extends Component {
         }
 
         if (this._paintCurIndex >= this._paintArt.cells.length) {
-            const nextArt = PIXEL_GALLERY.find((a) => !PixelGalleryService.isCompleted(a.id));
+            const nextArt = PixelGalleryService.getAllArts().find((a) => !PixelGalleryService.isCompleted(a.id));
             if (!nextArt) {
                 this._paintScrewsLeft = 0;
                 this.finishPaintShooting();
@@ -633,43 +654,38 @@ export class UIManager extends Component {
             this._paintArt = nextArt;
             PixelGalleryService.setActiveArt(nextArt.id);
             this._paintCurIndex = PixelGalleryService.getFilledCount(nextArt.id);
-            this.drawPixelArtStatic(this._paintArtCanvas, nextArt, this._paintCurIndex, 40, 37);
+            this._paintFinishSprite = this.drawHDArtInFrame(this._paintArtCanvas, nextArt, this._paintCurIndex, 388);
         }
 
-        // Remove 1 screw from the visible pile inside the crate so the crate empties out!
-        if (this._paintBoxPile && this._paintBoxPile.children.length > 0) {
+        // Gradually empty visual screws from crate mouth as remaining count drops
+        if (this._paintBoxPile && this._paintBoxPile.children.length > Math.ceil(this._paintScrewsLeft / 4)) {
             this._paintBoxPile.children[this._paintBoxPile.children.length - 1].destroy();
         }
 
         const art = this._paintArt;
         const idx = this._paintCurIndex;
-        const cell = art.cells[idx];
-        const cellStep = 40;
-        const screwSize = 37;
-        const half = ((art.gridSize - 1) * cellStep) / 2;
-        const tx = cell.col * cellStep - half;
-        const ty = half - cell.row * cellStep;
+        const [col, row, colorId] = art.cells[idx];
+        const artSize = Math.round(388 * 0.90);
+        const cellStep = artSize / art.gridSize;
+        const half = artSize / 2;
+        const tx = -half + (col + 0.5) * cellStep;
+        const ty = half - (row + 0.5) * cellStep;
 
-        // Shoot from cardboard crate mouth (y = -450 relative to wood frame center) -> (tx, ty)
-        const fly = this.makeSpriteNode(`shot_${idx}`, this._paintFlyLayer, `gbz_screw${cell.colorId}`, 46, 46);
+        // Shoot miniature 3D screw from cardboard crate mouth into (tx, ty)
+        const fly = this.makeSpriteNode(`shot_${idx}`, this._paintFlyLayer, `gbz_screw${colorId}`, 38, 38);
         fly.setPosition((Math.random() - 0.5) * 120, -455, 0);
         fly.angle = Math.random() * 360;
 
-        AudioManager.ins.play(AudioClips.SCREW_OUT);
+        if (idx % 2 === 0) AudioManager.ins.play(AudioClips.SCREW_OUT, 0.7);
 
-        const targetCanvas = this._paintArtCanvas;
         tween(fly)
-            .to(0.20, {
+            .to(0.18, {
                 position: new Vec3(tx, ty, 0),
-                scale: new Vec3(screwSize / 46, screwSize / 46, 1),
+                scale: new Vec3(cellStep / 38, cellStep / 38, 1),
                 angle: 0,
             }, { easing: 'quadOut' })
             .call(() => {
                 if (fly.isValid) fly.destroy();
-                if (targetCanvas && targetCanvas.isValid && this._paintArt?.id === art.id) {
-                    const landed = this.makeSpriteNode(`px_${idx}`, targetCanvas, `gbz_screw${cell.colorId}`, screwSize, screwSize);
-                    landed.setPosition(tx, ty, 0);
-                }
             })
             .start();
 
@@ -825,92 +841,65 @@ export class UIManager extends Component {
         if (!this._galleryListRoot) return;
         this._galleryListRoot.removeAllChildren();
 
-        // Determine current sequential artwork index (first unfinished artwork)
-        let curIndex = PIXEL_GALLERY.findIndex((a) => !PixelGalleryService.isCompleted(a.id));
-        const completedCount = curIndex === -1 ? PIXEL_GALLERY.length : curIndex;
-        if (curIndex === -1) curIndex = PIXEL_GALLERY.length;
+        const allArts = PixelGalleryService.getAllArts();
+        let curIndex = allArts.findIndex((a) => !PixelGalleryService.isCompleted(a.id));
+        const completedCount = curIndex === -1 ? allArts.length : curIndex;
+        if (curIndex === -1) curIndex = allArts.length;
 
         if (this._galleryCountLbl) {
-            this._galleryCountLbl.string = `Collected: ${completedCount} / ${PIXEL_GALLERY.length}`;
+            this._galleryCountLbl.string = `Collected: ${completedCount} / ${allArts.length}`;
         }
 
-        const holeSf = ResManager.ins.getGameSprite('hole');
-
-        PIXEL_GALLERY.forEach((art, idx) => {
-            const col = idx % 2;
-            const row = Math.floor(idx / 2);
-            const x = col === 0 ? -148 : 148;
-            const y = 246 - row * 252;
+        // Clean 3x4 grid showcasing all 12 HD artworks (Completed / In-Progress + Bar / Locked ?)
+        allArts.forEach((art, idx) => {
+            const col = idx % 3;
+            const row = Math.floor(idx / 3);
+            const x = (col - 1) * 196;
+            const y = 276 - row * 192;
 
             const filled = PixelGalleryService.getFilledCount(art.id);
             const total = art.cells.length;
             const pct = Math.round((filled / Math.max(1, total)) * 100);
 
             if (idx < curIndex) {
-                // State 1: COMPLETED — clean full 3D screw art in wooden frame, no progress bar
-                const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 274, 232, '#fef9c3', 255, 22);
+                // State 1: COMPLETED — crisp pre-rendered HD 28x28 3D-screw artwork
+                const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 182, 178, '#fef9c3', 255, 18);
                 tile.setPosition(x, y, 0);
-                const wf = this.makeSpriteNode('wf', tile, 'wood_frame', 164, 164);
-                wf.setPosition(0, 18, 0);
-                const thumb = new Node('thumb');
-                thumb.setParent(wf);
-                const step = 12;
-                const half = ((art.gridSize - 1) * step) / 2;
-                for (let i = 0; i < total; i++) {
-                    const cell = art.cells[i];
-                    const s = this.makeSpriteNode(`m_${i}`, thumb, `gbz_screw${cell.colorId}`, 11, 11);
-                    s.setPosition(cell.col * step - half, half - cell.row * step, 0);
-                }
-                const titleLbl = createLabel('t', tile, art.title, 22, '#0f172a', 240, 28);
-                titleLbl.isBold = true;
-                titleLbl.node.setPosition(0, -86, 0);
+                const wf = this.makeSpriteNode('wf', tile, 'wood_frame', 124, 124);
+                wf.setPosition(0, 16, 0);
+                const cNode = new Node('c');
+                cNode.setParent(wf);
+                this.drawHDArtInFrame(cNode, art, total, 94);
+                const tLbl = createLabel('t', tile, art.title, 16, '#0f172a', 170, 22);
+                tLbl.isBold = true;
+                tLbl.node.setPosition(0, -64, 0);
             } else if (idx === curIndex) {
-                // State 2: IN PROGRESS — partial 3D screw art + yellow progress bar below
-                const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 274, 232, '#e0f2fe', 255, 22);
+                // State 2: IN PROGRESS — HD outline + FILLED vertical reveal + yellow progress bar
+                const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 182, 178, '#e0f2fe', 255, 18);
                 tile.setPosition(x, y, 0);
-                const wf = this.makeSpriteNode('wf', tile, 'wood_frame', 150, 150);
-                wf.setPosition(0, 30, 0);
-                const thumb = new Node('thumb');
-                thumb.setParent(wf);
-                const step = 11;
-                const half = ((art.gridSize - 1) * step) / 2;
-                for (let i = 0; i < total; i++) {
-                    const cell = art.cells[i];
-                    const px = cell.col * step - half;
-                    const py = half - cell.row * step;
-                    if (i < filled) {
-                        const s = this.makeSpriteNode(`m_${i}`, thumb, `gbz_screw${cell.colorId}`, 10, 10);
-                        s.setPosition(px, py, 0);
-                    } else {
-                        const h = new Node(`e_${i}`);
-                        h.setParent(thumb);
-                        h.setPosition(px, py, 0);
-                        const ui = h.addComponent(UITransform);
-                        ui.setContentSize(7, 7);
-                        const sp = h.addComponent(Sprite);
-                        sp.sizeMode = Sprite.SizeMode.CUSTOM;
-                        if (holeSf) sp.spriteFrame = holeSf;
-                        const op = h.addComponent(UIOpacity);
-                        op.opacity = 90;
-                    }
-                }
-                const barTrack = this.makeSpriteNode('p_track', tile, 'UI_jdt_1', 220, 28);
-                barTrack.setPosition(0, -76, 0);
-                const barFill = this.makeSpriteNode('p_fill', barTrack, 'UI_jdt_2', 220, 28);
+                const wf = this.makeSpriteNode('wf', tile, 'wood_frame', 116, 116);
+                wf.setPosition(0, 22, 0);
+                const cNode = new Node('c');
+                cNode.setParent(wf);
+                this.drawHDArtInFrame(cNode, art, filled, 88);
+
+                const barTrack = this.makeSpriteNode('p_track', tile, 'UI_jdt_1', 152, 22);
+                barTrack.setPosition(0, -58, 0);
+                const barFill = this.makeSpriteNode('p_fill', barTrack, 'UI_jdt_2', 152, 22);
                 barFill.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
-                barFill.setPosition(-110, 0, 0);
+                barFill.setPosition(-76, 0, 0);
                 barFill.setScale(Math.max(0.06, Math.min(1, filled / Math.max(1, total))), 1, 1);
-                const pLbl = createLabel('p_lbl', barTrack, `${pct}%`, 18, '#ffffff', 160, 24);
+                const pLbl = createLabel('p_lbl', barTrack, `${pct}%`, 15, '#ffffff', 120, 20);
                 pLbl.isBold = true;
             } else {
-                // State 3: LOCKED MYSTERY "?" (matches original wenhao.active = true)
-                const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 274, 232, '#e2e8f0', 255, 22);
+                // State 3: LOCKED MYSTERY "?"
+                const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 182, 178, '#e2e8f0', 255, 18);
                 tile.setPosition(x, y, 0);
-                const qCircle = createPanel('q_bg', tile, 112, 112, '#94a3b8', 255, 56);
+                const qCircle = createPanel('q_bg', tile, 82, 82, '#94a3b8', 255, 41);
                 qCircle.setPosition(0, 14, 0);
-                const qLbl = createLabel('q_txt', qCircle, '?', 64, '#ffffff', 96, 80);
+                const qLbl = createLabel('q_txt', qCircle, '?', 48, '#ffffff', 72, 60);
                 qLbl.isBold = true;
-                createLabel('lock_lbl', tile, 'LOCKED', 20, '#64748b', 180, 26).node.setPosition(0, -78, 0);
+                createLabel('lock_lbl', tile, 'LOCKED', 16, '#64748b', 140, 22).node.setPosition(0, -58, 0);
                 this.bindTap(tile, () => {
                     AudioManager.ins.play(AudioClips.CLICK_ERROR);
                     this.showToast('Complete current artwork to unlock!');
@@ -951,6 +940,7 @@ export class UIManager extends Component {
 
     public showWin(totalScrews = 15): void {
         this.hidePopups();
+        this._lastWonTotalScrews = totalScrews;
         if (this._winCountLbl) {
             this._winCountLbl.string = `Awesome! Collected ${totalScrews} Screws!`;
         }

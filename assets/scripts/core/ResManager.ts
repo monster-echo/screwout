@@ -1,6 +1,14 @@
 import { ImageAsset, JsonAsset, resources, sp, SpriteFrame } from 'cc';
 import { DifficultyConfig, LevelData } from './GameTypes';
 
+export interface HDArtManifestItem {
+    id: string;
+    title: string;
+    gridSize: number;
+    total: number;
+    cells: [number, number, number][]; // [col, row, colorId]
+}
+
 export class ResManager {
     private static _ins: ResManager | null = null;
     public static get ins(): ResManager {
@@ -13,7 +21,9 @@ export class ResManager {
     private _gameSprites: Map<string, SpriteFrame> = new Map();
     private _boardSprites: Map<string, SpriteFrame> = new Map();
     private _uiSprites: Map<string, SpriteFrame> = new Map();
+    private _paintSprites: Map<string, SpriteFrame> = new Map();
     private _difficultyConfigs: DifficultyConfig[] = [];
+    private _artManifest: HDArtManifestItem[] = [];
     private _touchSpine: sp.SkeletonData | null = null;
     private _coreLoaded = false;
 
@@ -23,11 +33,13 @@ export class ResManager {
             this.loadImageDirAsSprites('sprites/games', this._gameSprites),
             this.loadImageDirAsSprites('sprites/boards', this._boardSprites),
             this.loadImageDirAsSprites('sprites/ui_orig', this._uiSprites),
+            this.loadImageDirAsSprites('paint', this._paintSprites),
             this.loadDifficultyConfig(),
+            this.loadArtManifest(),
             this.loadSpineAsset('spine/touch/touch').then((d) => { this._touchSpine = d; }),
         ]);
         console.log(
-            `[ResManager] loaded games=${this._gameSprites.size}, boards=${this._boardSprites.size}, ui=${this._uiSprites.size}, touchSpine=${!!this._touchSpine}`,
+            `[ResManager] loaded games=${this._gameSprites.size}, boards=${this._boardSprites.size}, ui=${this._uiSprites.size}, paint=${this._paintSprites.size}, arts=${this._artManifest.length}, touchSpine=${!!this._touchSpine}`,
         );
         this._coreLoaded = true;
     }
@@ -86,6 +98,17 @@ export class ResManager {
         });
     }
 
+    private loadArtManifest(): Promise<void> {
+        return new Promise((resolve) => {
+            resources.load('config/art_manifest', JsonAsset, (err, asset) => {
+                if (!err && asset && Array.isArray(asset.json)) {
+                    this._artManifest = asset.json as HDArtManifestItem[];
+                }
+                resolve();
+            });
+        });
+    }
+
     private loadSpineAsset(path: string): Promise<sp.SkeletonData | null> {
         return new Promise((resolve) => {
             resources.load(path, sp.SkeletonData, (err, data) => {
@@ -116,6 +139,14 @@ export class ResManager {
 
     public getUiSprite(name: string): SpriteFrame | null {
         return this._uiSprites.get(name) || this._gameSprites.get(name) || null;
+    }
+
+    public getPaintSprite(name: string): SpriteFrame | null {
+        return this._paintSprites.get(name) || null;
+    }
+
+    public get artManifest(): HDArtManifestItem[] {
+        return this._artManifest;
     }
 
     public getDifficultyConfig(level: number): DifficultyConfig {
