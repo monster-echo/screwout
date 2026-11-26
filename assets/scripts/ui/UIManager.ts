@@ -314,112 +314,130 @@ export class UIManager extends Component {
             this.openSettings();
         });
 
-        // Coins Pill
-        const coinPill = createPanel('coin_pill', topBar, 152, 52, '#0f172a', 210, 26);
-        coinPill.setPosition(-175, 0, 0);
-        this._coinsLbl = createLabel('coins_lbl', coinPill, '120 C', 24, '#fde047', 136, 36);
+        // Coins Pill with real 3D coin icon
+        const coinPill = createPanel('coin_pill', topBar, 166, 52, '#0f172a', 200, 26);
+        coinPill.setPosition(-172, 0, 0);
+        const coinIco = this.makeSpriteFit('c_ico', coinPill, 'flyGold', 42, 42);
+        coinIco.setPosition(-56, 0, 0);
+        this._coinsLbl = createLabel('coins_lbl', coinPill, '120', 25, '#fde047', 102, 36);
+        this._coinsLbl.node.setPosition(16, 0, 0);
         this.bindTap(coinPill, () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             this.openShop();
         });
 
-        // Bolts Pill
-        const boltPill = createPanel('bolt_pill', topBar, 146, 52, '#0f172a', 210, 26);
-        boltPill.setPosition(-12, 0, 0);
-        this._boltsLbl = createLabel('bolts_lbl', boltPill, '20 B', 24, '#38bdf8', 130, 36);
+        // Bolts Pill with real 3D blue screw icon
+        const boltPill = createPanel('bolt_pill', topBar, 152, 52, '#0f172a', 200, 26);
+        boltPill.setPosition(-4, 0, 0);
+        const boltIco = this.makeSpriteFit('b_ico', boltPill, 'gbz_screw4', 40, 40);
+        boltIco.setPosition(-48, 0, 0);
+        this._boltsLbl = createLabel('bolts_lbl', boltPill, '20', 25, '#38bdf8', 90, 36);
+        this._boltsLbl.node.setPosition(18, 0, 0);
 
-        // Win Streak Pill
-        const streakPill = createPanel('streak_pill', topBar, 140, 52, '#ea580c', 235, 26);
-        streakPill.setPosition(145, 0, 0);
-        this._menuStreakLbl = createLabel('streak_lbl', streakPill, 'x0 WIN', 22, '#ffffff', 128, 34);
+        // Win Streak Flame Pill
+        const streakPill = createPanel('streak_pill', topBar, 134, 52, '#ea580c', 235, 26);
+        streakPill.setPosition(148, 0, 0);
+        this._menuStreakLbl = createLabel('streak_lbl', streakPill, 'x0 WIN', 22, '#ffffff', 120, 34);
 
         // Shop Button (right)
-        const shopBtn = createButton('btn_shop', topBar, 'SHOP', 110, 54, '#22c55e', () => {
+        const shopBtn = createButton('btn_shop', topBar, 'SHOP', 108, 52, '#22c55e', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             this.openShop();
         }, 22, '#ffffff', 22);
         shopBtn.setPosition(286, 0, 0);
 
-        // Game Title Banner
-        const titleLbl = createLabel('game_title', this._menuNode, 'SCREW JAM', 54, '#0f172a', 520, 68);
-        titleLbl.node.setPosition(0, 488, 0);
+        // 3D Extruded Golden Game Logo (replaces plain black text!)
+        const logo = this.makeSpriteFit('game_logo', this._menuNode, 'logo_screw_jam', 460, 106);
+        logo.setPosition(0, 488, 0);
 
-        // Centerpiece Wooden Frame showing live Pixel Art Mosaic
-        const woodFrame = this.makeSpriteNode('wood_frame', this._menuNode, 'wood_frame', 468, 468);
-        woodFrame.setPosition(0, 206, 0);
+        // Hero Centerpiece: Large 3D Oak Wooden Frame showing live Pixel Art Mosaic
+        const woodFrame = this.makeSpriteNode('wood_frame', this._menuNode, 'wood_frame', 490, 490);
+        woodFrame.setPosition(0, 184, 0);
 
         this._pixelCanvasNode = new Node('pixel_canvas');
         this._pixelCanvasNode.setParent(woodFrame);
         this._pixelCanvasNode.setPosition(0, 0, 0);
 
-        // Artwork Title & Progress Bar below wooden frame
-        this._menuArtTitleLbl = createLabel('art_title', this._menuNode, 'Lucky Cat', 26, '#0f172a', 420, 36);
-        this._menuArtTitleLbl.node.setPosition(0, -56, 0);
+        // Clean Progress Bar + Compact BUILD Pill right below wooden frame
+        this._menuArtTitleLbl = createLabel('art_title', this._menuNode, 'Lucky Cat', 24, '#0f172a', 420, 32);
+        this._menuArtTitleLbl.node.setPosition(0, -84, 0);
 
-        const barTrack = this.makeSpriteNode('jdt_track', this._menuNode, 'UI_jdt_1', 468, 38);
-        barTrack.setPosition(0, -96, 0);
-        this._menuProgressFill = this.makeSpriteNode('jdt_fill', barTrack, 'UI_jdt_2', 468, 38);
+        const barTrack = this.makeSpriteNode('jdt_track', this._menuNode, 'UI_jdt_1', 320, 42);
+        barTrack.setPosition(-88, -134, 0);
+        this._menuProgressFill = this.makeSpriteNode('jdt_fill', barTrack, 'UI_jdt_2', 320, 42);
         this._menuProgressFill.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
-        this._menuProgressFill.setPosition(-234, 0, 0);
-        this._menuProgressLbl = createLabel('jdt_lbl', barTrack, '0 / 45 Bolts', 22, '#ffffff', 360, 34);
+        this._menuProgressFill.setPosition(-160, 0, 0);
+        this._menuProgressLbl = createLabel('jdt_lbl', barTrack, '0 / 60', 22, '#ffffff', 260, 34);
 
-        // Interactive BUILD button for Pixel Art Meta Loop
-        const buildBtn = createButton('btn_build', this._menuNode, 'BUILD (+5 BOLTS)', 340, 66, '#f59e0b', () => {
+        const buildBtn = createButton('btn_build', this._menuNode, 'BUILD +5', 164, 52, '#f59e0b', () => {
             this.onBuildActiveArt();
-        }, 26, '#ffffff', 26);
-        buildBtn.setPosition(0, -162, 0);
+        }, 23, '#ffffff', 24);
+        buildBtn.setPosition(168, -134, 0);
         this._buildBtnLbl = buildBtn.getChildByName('Label')?.getComponent(Label) || null;
 
-        // 3-Card Meta Feature Dock: Gallery | Daily Challenge | Leaderboard
+        // 3 Glossy 3D Squircle Feature Icon Buttons (Gallery | Daily | Ranking)
         const dock = new Node('meta_dock');
         dock.setParent(this._menuNode);
-        dock.setPosition(0, -286, 0);
+        dock.setPosition(0, -264, 0);
 
-        // Card 1: Pixel Gallery
-        const galCard = createPanel('card_gallery', dock, 204, 128, '#ffffff', 240, 24);
-        galCard.setPosition(-224, 0, 0);
-        createLabel('g_t', galCard, 'GALLERY', 24, '#0f172a', 180, 34).node.setPosition(0, 26, 0);
-        this._galleryBadgeLbl = createLabel('g_b', galCard, '0 / 6 Done', 20, '#0284c7', 180, 30);
-        this._galleryBadgeLbl.node.setPosition(0, -16, 0);
-        this.bindTap(galCard, () => {
+        // Icon 1: Gallery
+        const galBtn = this.makeSpriteNode('card_gallery', dock, 'icon_menu_gallery', 152, 140);
+        galBtn.setPosition(-196, 0, 0);
+        createLabel('g_t', galBtn, 'GALLERY', 22, '#ffffff', 140, 28).node.setPosition(0, -44, 0);
+        this._galleryBadgeLbl = createLabel('g_b', galBtn, '0 / 6 Done', 19, '#1e293b', 160, 26);
+        this._galleryBadgeLbl.node.setPosition(0, -88, 0);
+        this.bindTap(galBtn, () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             this.openGallery();
         });
 
-        // Card 2: Daily Challenge
-        const dailyCard = createPanel('card_daily', dock, 204, 128, '#ffffff', 240, 24);
-        dailyCard.setPosition(0, 0, 0);
-        createLabel('d_t', dailyCard, 'DAILY', 24, '#0f172a', 180, 34).node.setPosition(0, 26, 0);
-        this._dailyBadgeLbl = createLabel('d_b', dailyCard, '+100C +20B', 20, '#ea580c', 180, 30);
-        this._dailyBadgeLbl.node.setPosition(0, -16, 0);
-        this.bindTap(dailyCard, () => {
+        // Icon 2: Daily Challenge
+        const dailyBtn = this.makeSpriteNode('card_daily', dock, 'icon_menu_daily', 152, 140);
+        dailyBtn.setPosition(0, 0, 0);
+        createLabel('d_t', dailyBtn, 'DAILY', 22, '#ffffff', 140, 28).node.setPosition(0, -44, 0);
+        this._dailyBadgeLbl = createLabel('d_b', dailyBtn, '+100C +20B', 19, '#c2410c', 160, 26);
+        this._dailyBadgeLbl.node.setPosition(0, -88, 0);
+        this.bindTap(dailyBtn, () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             this._actions?.onStartDaily();
         });
 
-        // Card 3: Country & Global Leaderboard
-        const rankCard = createPanel('card_rank', dock, 204, 128, '#ffffff', 240, 24);
-        rankCard.setPosition(224, 0, 0);
-        createLabel('r_t', rankCard, 'RANKING', 24, '#0f172a', 180, 34).node.setPosition(0, 26, 0);
-        this._rankBadgeLbl = createLabel('r_b', rankCard, 'US · 0 pts', 20, '#16a34a', 180, 30);
-        this._rankBadgeLbl.node.setPosition(0, -16, 0);
-        this.bindTap(rankCard, () => {
+        // Icon 3: Country & Global Ranking
+        const rankBtn = this.makeSpriteNode('card_rank', dock, 'icon_menu_rank', 152, 140);
+        rankBtn.setPosition(196, 0, 0);
+        createLabel('r_t', rankBtn, 'RANKING', 22, '#ffffff', 140, 28).node.setPosition(0, -44, 0);
+        this._rankBadgeLbl = createLabel('r_b', rankBtn, 'US · 0 pts', 19, '#1e293b', 160, 26);
+        this._rankBadgeLbl.node.setPosition(0, -88, 0);
+        this.bindTap(rankBtn, () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             this.openLeaderboard();
         });
 
-        // Bottom Primary PLAY CTA Button
-        const startBtn = this.makeSpriteNode('btn_start', this._menuNode, '按键1', 420, 124);
-        startBtn.setPosition(0, -470, 0);
+        // Bottom Hero PLAY CTA Button (pinned cleanly with breathing idle pulse!)
+        const startBtn = this.makeSpriteNode('btn_start', this._menuNode, '按键1', 430, 128);
+        const sW = startBtn.addComponent(Widget);
+        sW.isAlignBottom = true;
+        sW.isAlignHorizontalCenter = true;
+        sW.bottom = 78;
         this._playBtnLbl = createLabel('start_lbl', startBtn, 'PLAY · LEVEL 1', 38, '#ffffff', 380, 56);
         this._playBtnLbl.node.setPosition(0, 6, 0);
         this.bindTap(startBtn, () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             this._actions?.onStartGame(DataManager.ins.level);
         });
+        tween(startBtn)
+            .repeatForever(
+                tween()
+                    .to(0.85, { scale: new Vec3(1.03, 1.03, 1) }, { easing: 'sineInOut' })
+                    .to(0.85, { scale: Vec3.ONE }, { easing: 'sineInOut' }),
+            )
+            .start();
 
-        this._playSubLbl = createLabel('play_sub', this._menuNode, 'Win Streak x1+: Start with Bonus Slot!', 21, '#334155', 600, 34);
-        this._playSubLbl.node.setPosition(0, -560, 0);
+        this._playSubLbl = createLabel('play_sub', this._menuNode, 'Win Streak x1+: Start with Bonus Slot!', 20, '#0f172a', 600, 32);
+        const psW = this._playSubLbl.node.addComponent(Widget);
+        psW.isAlignBottom = true;
+        psW.isAlignHorizontalCenter = true;
+        psW.bottom = 32;
     }
 
     private renderActivePixelArt(): void {
@@ -492,12 +510,12 @@ export class UIManager extends Component {
         }
         if (this._buildBtnLbl) {
             if (filled >= total) {
-                this._buildBtnLbl.string = 'CHOOSE NEXT ART';
+                this._buildBtnLbl.string = 'NEXT ART';
             } else if (DataManager.ins.bolts > 0) {
                 const step = Math.min(5, total - filled, DataManager.ins.bolts);
-                this._buildBtnLbl.string = `BUILD (+${step} BOLTS)`;
+                this._buildBtnLbl.string = `BUILD +${step}`;
             } else {
-                this._buildBtnLbl.string = 'PLAY TO EARN BOLTS';
+                this._buildBtnLbl.string = 'NO BOLTS';
             }
         }
     }
@@ -582,7 +600,16 @@ export class UIManager extends Component {
         rewardBox.setPosition(0, 64, 0);
         this._winRewardLbl = createLabel('win_reward', rewardBox, '+35 Coins   +12 Bolts', 30, '#0f172a', 430, 46);
 
-        this._winDoubleBtn = createButton('btn_2x', card, '2x REWARD (AD)', 380, 82, '#f59e0b', () => {
+        // Primary button FIRST: NEXT LEVEL
+        const nextBtn = createButton('btn_next', card, 'NEXT LEVEL', 390, 90, '#22c55e', () => {
+            AudioManager.ins.play(AudioClips.GAME_CLICK);
+            this._actions?.onNextLevel();
+        }, 34, '#ffffff', 28);
+        nextBtn.setPosition(0, -60, 0);
+        this._winNextLbl = nextBtn.getChildByName('Label')?.getComponent(Label) || null;
+
+        // Secondary button BELOW: 2x REWARD (AD)
+        this._winDoubleBtn = createButton('btn_2x', card, '2x REWARD (AD)', 360, 76, '#f59e0b', () => {
             if (this._winDoubled) return;
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             MonetizationManager.ins.showRewardedAd('double_win_reward', () => {
@@ -595,20 +622,13 @@ export class UIManager extends Component {
                 }
                 this.refreshHeader();
             });
-        }, 28, '#ffffff', 24);
-        this._winDoubleBtn.setPosition(0, -64, 0);
+        }, 26, '#ffffff', 24);
+        this._winDoubleBtn.setPosition(0, -166, 0);
 
-        const nextBtn = createButton('btn_next', card, 'NEXT LEVEL', 380, 86, '#22c55e', () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            this._actions?.onNextLevel();
-        }, 32, '#ffffff', 26);
-        nextBtn.setPosition(0, -170, 0);
-        this._winNextLbl = nextBtn.getChildByName('Label')?.getComponent(Label) || null;
-
-        createButton('btn_home', card, 'HOME', 220, 58, '#64748b', () => {
+        createButton('btn_home', card, 'HOME', 220, 56, '#64748b', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             this._actions?.onBackMenu();
-        }, 24, '#ffffff', 18).setPosition(0, -264, 0);
+        }, 24, '#ffffff', 18).setPosition(0, -258, 0);
 
         this._winNode.active = false;
     }
@@ -1001,8 +1021,8 @@ export class UIManager extends Component {
 
     public refreshHeader(): void {
         const dm = DataManager.ins;
-        if (this._coinsLbl) this._coinsLbl.string = `${dm.coins} C`;
-        if (this._boltsLbl) this._boltsLbl.string = `${dm.bolts} B`;
+        if (this._coinsLbl) this._coinsLbl.string = `${dm.coins}`;
+        if (this._boltsLbl) this._boltsLbl.string = `${dm.bolts}`;
         if (this._menuStreakLbl) this._menuStreakLbl.string = `x${dm.winStreak} WIN`;
 
         if (this._hudStreakNode && this._hudStreakLbl) {

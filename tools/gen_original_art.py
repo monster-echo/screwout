@@ -11,7 +11,7 @@ import colorsys
 import math
 import os
 from collections import deque
-from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
+from PIL import Image, ImageDraw, ImageFilter, ImageEnhance, ImageFont
 
 ROOT = "/Users/echo/workspace/CocosGames/ScrewOut"
 BRAIN = "/Users/echo/.gemini/antigravity/brain/9d137123-917d-47de-ae09-97bdac13be55"
@@ -31,20 +31,20 @@ SRC_POTION = os.path.join(BRAIN, "potion_3d_1795665795958.jpg")
 SRC_BROOM = os.path.join(BRAIN, "magic_whisk_broom_icon_1795665792684.jpg")
 SRC_COIN = os.path.join(BRAIN, "golden_star_coin_icon_1795665797558.jpg")
 
-# 10 maximally distinct, zero-ambiguity casual puzzle colors (no duplicate greens or muddy browns!)
+# Scheme A: Royal Candy (Classic Overseas Casual - 10 maximally distinct colors)
 # Source master is vivid crimson red (hue ~ 0.0 / 0.99)
 COLOR_TARGETS = {
     0:  (0.60, 0.10, 0.95),  # Neutral Silver (fallback)
-    1:  (0.99, 1.05, 1.00),  # 1: Crimson Red
-    2:  (0.145, 1.08, 1.38), # 2: Bright Lemon Yellow
-    3:  (0.38, 1.02, 0.94),  # 3: Emerald Green (ONLY green!)
-    4:  (0.64, 1.06, 0.98),  # 4: Deep Royal Blue
-    5:  (0.77, 0.96, 1.06),  # 5: Vivid Royal Purple
-    6:  (0.072, 1.08, 1.24), # 6: Bright Tangerine Orange
-    7:  (0.915, 0.68, 1.32), # 7: Bright Bubblegum Pink
-    8:  (0.515, 0.88, 1.28), # 8: Bright Ice Cyan
-    9:  (0.58, 0.05, 1.42),  # 9: Glossy Pearl White / Silver (replaces duplicate lime-green!)
-    10: (0.60, 0.14, 0.42),  # 10: Glossy Obsidian Charcoal (replaces muddy brown!)
+    1:  (0.99, 1.05, 1.02),  # 1: Red
+    2:  (0.14, 1.08, 1.38),  # 2: Yellow
+    3:  (0.37, 1.02, 0.98),  # 3: Green
+    4:  (0.62, 1.05, 1.02),  # 4: Blue
+    5:  (0.77, 0.96, 1.06),  # 5: Purple
+    6:  (0.072, 1.08, 1.25), # 6: Orange
+    7:  (0.91, 0.68, 1.34),  # 7: Pink
+    8:  (0.51, 0.88, 1.28),  # 8: Cyan
+    9:  (0.58, 0.04, 1.44),  # 9: Pearl White
+    10: (0.60, 0.12, 0.40),  # 10: Black
 }
 
 
@@ -429,7 +429,99 @@ def make_3d_ui_and_backgrounds():
     sd.rounded_rectangle([8, 6, 273, 188], radius=32, outline=(255, 255, 255, 215), width=4)
     sbtn.save(os.path.join(UI_ORIG_DIR, "skill_btn_bg.png"))
 
-    # 10. Clean sparkling touch Spine atlas (straight alpha, golden-white stars!)
+    # 10. 4x Supersampled 3D Extruded Golden Logo ("SCREW JAM")
+    def make_3d_logo():
+        W, H = 560, 128
+        S = 2
+        im = Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Rounded Bold.ttf", 76 * S)
+        except Exception:
+            try:
+                font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 76 * S)
+            except Exception:
+                font = ImageFont.load_default()
+        txt = "SCREW JAM"
+        bbox = d.textbbox((0, 0), txt, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        tx = (W * S - tw) // 2 - bbox[0]
+        ty = (H * S - th) // 2 - bbox[1] - 6
+
+        # Deep 3D navy extrusion layers
+        for dy in range(18, 0, -2):
+            d.text((tx, ty + dy), txt, font=font, fill=(20, 48, 112, 255), stroke_width=14, stroke_fill=(20, 48, 112, 255))
+        # Crisp white inner rim
+        d.text((tx, ty), txt, font=font, fill=(255, 255, 255, 255), stroke_width=8, stroke_fill=(255, 255, 255, 255))
+        # Warm sunny gold-to-orange gradient fill mask
+        tmask = Image.new("L", (W * S, H * S), 0)
+        ImageDraw.Draw(tmask).text((tx, ty), txt, font=font, fill=255)
+        grad = Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(grad)
+        for y in range(H * S):
+            u = max(0.0, min(1.0, (y - ty) / max(1, th)))
+            r = 255
+            g = int(244 - 92 * u)
+            b = int(92 - 78 * u)
+            gd.line([(0, y), (W * S, y)], fill=(r, g, b, 255))
+        im.paste(grad, (0, 0), tmask)
+        # Top glossy specular highlight band on letters
+        shine = Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
+        ImageDraw.Draw(shine).rectangle([0, ty, W * S, ty + int(th * 0.42)], fill=(255, 255, 255, 72))
+        im.paste(shine, (0, 0), tmask)
+        im.resize((W, H), Image.Resampling.LANCZOS).save(os.path.join(UI_ORIG_DIR, "logo_screw_jam.png"))
+
+    # 11. Glossy 3D Squircle Menu Icons (Gallery Palette, Daily Star Calendar, Gold Trophy)
+    def make_glossy_squircle(top_rgb, bot_rgb, shadow_rgb):
+        W, H = 160, 148
+        base = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(base)
+        d.rounded_rectangle([6, 14, W - 6, H - 4], radius=32, fill=(*shadow_rgb, 255))
+        grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(grad)
+        for y in range(6, H - 14):
+            t = (y - 6) / max(1, (H - 20))
+            c = tuple(int(top_rgb[i] * (1 - t) + bot_rgb[i] * t) for i in range(3))
+            gd.line([(0, y), (W, y)], fill=(*c, 255))
+        mask = Image.new("L", (W, H), 0)
+        ImageDraw.Draw(mask).rounded_rectangle([8, 6, W - 8, H - 14], radius=30, fill=255)
+        base.paste(grad, (0, 0), mask)
+        spec = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        ImageDraw.Draw(spec).rounded_rectangle([18, 12, W - 18, 56], radius=18, fill=(255, 255, 255, 76))
+        base.alpha_composite(spec)
+        d.rounded_rectangle([8, 6, W - 8, H - 14], radius=30, outline=(255, 255, 255, 210), width=3)
+        return base
+
+    # Gallery icon (purple glossy squircle + 4 colorful mini 3D screws arranged as a mosaic!)
+    gal = make_glossy_squircle((168, 85, 247), (109, 40, 217), (76, 29, 149))
+    for (sx, sy, cid) in [(48, 28, 1), (82, 28, 2), (48, 62, 3), (82, 62, 4)]:
+        sp = os.path.join(GAMES_DIR, f"gbz_screw{cid}.png")
+        if os.path.exists(sp):
+            ms = Image.open(sp).convert("RGBA").resize((32, 32), Image.Resampling.LANCZOS)
+            gal.alpha_composite(ms, (sx, sy))
+    gal.save(os.path.join(UI_ORIG_DIR, "icon_menu_gallery.png"))
+
+    # Daily icon (coral-orange glossy squircle + 3D golden star coin!)
+    daily = make_glossy_squircle((251, 146, 60), (234, 88, 12), (154, 52, 18))
+    coin_sm = coin_cut.resize((72, 72), Image.Resampling.LANCZOS)
+    daily.alpha_composite(coin_sm, (44, 24))
+    daily.save(os.path.join(UI_ORIG_DIR, "icon_menu_daily.png"))
+
+    # Ranking icon (royal-blue glossy squircle + 3D golden trophy cup!)
+    rank = make_glossy_squircle((56, 189, 248), (2, 132, 199), (12, 74, 110))
+    rd = ImageDraw.Draw(rank)
+    # Golden trophy cup silhouette with warm 3D highlight
+    rd.arc([38, 32, 68, 66], start=90, end=270, fill=(250, 204, 21, 255), width=6)
+    rd.arc([92, 32, 122, 66], start=270, end=90, fill=(250, 204, 21, 255), width=6)
+    rd.rounded_rectangle([50, 24, 110, 72], radius=16, fill=(250, 204, 21, 255), outline=(180, 83, 9, 255), width=3)
+    rd.rounded_rectangle([58, 30, 84, 52], radius=8, fill=(254, 249, 195, 160))
+    rd.rectangle([72, 70, 88, 84], fill=(234, 179, 8, 255))
+    rd.rounded_rectangle([54, 82, 106, 94], radius=5, fill=(180, 83, 9, 255), outline=(253, 224, 71, 255), width=2)
+    rank.save(os.path.join(UI_ORIG_DIR, "icon_menu_rank.png"))
+
+    make_3d_logo()
+
+    # 12. Clean sparkling touch Spine atlas (straight alpha, golden-white stars!)
     if os.path.exists(TOUCH_PNG):
         t_im = Image.open(TOUCH_PNG).convert("RGBA")
         tw, th = t_im.size
