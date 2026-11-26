@@ -1,5 +1,5 @@
 import { _decorator, Color, Component, Label, Node, Sprite, tween, UITransform, Vec3 } from 'cc';
-import { ResManager } from '../core/ResManager';
+import { ThemeManager } from '../core/ThemeManager';
 import { SCREW_FALLBACK_COLORS } from '../core/GameTypes';
 
 const { ccclass } = _decorator;
@@ -71,7 +71,7 @@ export class TargetBox extends Component {
         lUi.setContentSize(156, 204);
         const lSp = this._lockNode.addComponent(Sprite);
         lSp.sizeMode = Sprite.SizeMode.CUSTOM;
-        const lockedSf = ResManager.ins.getUiSprite('解锁盒子') || ResManager.ins.getGameSprite('gbz_box0');
+        const lockedSf = ThemeManager.ins.getLockedBoxSprite();
         if (lockedSf) {
             lSp.spriteFrame = lockedSf;
             lSp.color = Color.WHITE.clone();
@@ -83,8 +83,8 @@ export class TargetBox extends Component {
             const bUi = badge.addComponent(UITransform);
             bUi.setContentSize(130, 50);
             const lbl = badge.addComponent(Label);
-            lbl.string = '解锁盒';
-            lbl.fontSize = 26;
+            lbl.string = 'UNLOCK';
+            lbl.fontSize = 24;
             lbl.lineHeight = 32;
             lbl.color = Color.WHITE.clone();
         }
@@ -100,7 +100,7 @@ export class TargetBox extends Component {
     public refresh(colorId: number): void {
         this.colorId = colorId;
         if (this._bodySprite) {
-            const boxSf = ResManager.ins.getGameSprite(`gbz_box${colorId}`);
+            const boxSf = ThemeManager.ins.getBoxSprite(colorId);
             if (boxSf) {
                 this._bodySprite.spriteFrame = boxSf;
                 this._bodySprite.color = Color.WHITE.clone();
@@ -108,7 +108,7 @@ export class TargetBox extends Component {
                 this._bodySprite.color = new Color().fromHEX(SCREW_FALLBACK_COLORS[colorId] || '#cccccc');
             }
         }
-        const screwSf = ResManager.ins.getGameSprite(`gbz_screw${colorId}`);
+        const screwSf = ThemeManager.ins.getScrewSprite(colorId);
         for (let i = 0; i < this.screwList.length; i++) {
             const sNode = this.screwList[i];
             const sp = sNode.getComponent(Sprite);
@@ -119,7 +119,7 @@ export class TargetBox extends Component {
             sNode.active = i < this.screwNum;
         }
         if (this._coverSprite) {
-            const covSf = ResManager.ins.getGameSprite(`gbz_cover${colorId}`);
+            const covSf = ThemeManager.ins.getCoverSprite(colorId);
             if (covSf) {
                 this._coverSprite.spriteFrame = covSf;
                 this._coverSprite.color = Color.WHITE.clone();
@@ -127,6 +127,24 @@ export class TargetBox extends Component {
         }
         if (this._coverNode) {
             this._coverNode.active = false;
+        }
+        this.refreshLockSprite();
+    }
+
+    public refreshTheme(): void {
+        this.refreshLockSprite();
+        if (this.colorId > 0) {
+            this.refresh(this.colorId);
+        }
+    }
+
+    private refreshLockSprite(): void {
+        if (!this._lockNode) return;
+        const lSp = this._lockNode.getComponent(Sprite);
+        const lockedSf = ThemeManager.ins.getLockedBoxSprite();
+        if (lSp && lockedSf) {
+            lSp.spriteFrame = lockedSf;
+            lSp.color = Color.WHITE.clone();
         }
     }
 

@@ -7,3 +7,7 @@ profiles/
 .DS_Store
 node_modules/
 tools/autoplay_report.json
+export/
+dist/
+.tmp/
+release.env

@@ -1,5 +1,5 @@
 import { sys } from 'cc';
-import { GameStatus, SkillType, TOTAL_LEVELS } from './GameTypes';
+import { GameStatus, SkillType, ThemeId, TOTAL_LEVELS } from './GameTypes';
 
 export interface SkillInventory {
     slot: number;
@@ -21,6 +21,8 @@ interface SavePayload {
     vibrate: boolean;
     skillCounts: SkillInventory;
     gallery: GalleryProgress;
+    activeTheme: ThemeId;
+    unlockedThemes: ThemeId[];
 }
 
 const STORAGE_KEY = 'screw_out_clean_v1';
@@ -53,6 +55,11 @@ export class DataManager {
         filledCounts: {},
         claimedRewards: [],
     };
+
+    // Dual-theme strategy: Sweet Dessert is the default starter skin for high CTR & ASMR onboarding;
+    // Wood & Acrylic (Lv 10) and Minimalist Nordic (Lv 20) unlock progressively or via Rewarded Ad.
+    public activeTheme: ThemeId = 'dessert';
+    public unlockedThemes: ThemeId[] = ['dessert'];
 
     // Runtime state (reset per level)
     public status: GameStatus = GameStatus.MENU;
@@ -89,6 +96,15 @@ export class DataManager {
                     claimedRewards: Array.isArray(parsed.gallery.claimedRewards) ? parsed.gallery.claimedRewards : [],
                 };
             }
+            if (parsed.activeTheme === 'dessert' || parsed.activeTheme === 'acrylic' || parsed.activeTheme === 'nordic') {
+                this.activeTheme = parsed.activeTheme;
+            }
+            if (Array.isArray(parsed.unlockedThemes)) {
+                const valid = parsed.unlockedThemes.filter(
+                    (t): t is ThemeId => t === 'dessert' || t === 'acrylic' || t === 'nordic',
+                );
+                this.unlockedThemes = valid.includes('dessert') ? valid : ['dessert', ...valid];
+            }
         } catch {
             // Ignore malformed storage
         }
@@ -103,6 +119,8 @@ export class DataManager {
             vibrate: this.vibrateEnabled,
             skillCounts: this.skillCounts,
             gallery: this.gallery,
+            activeTheme: this.activeTheme,
+            unlockedThemes: this.unlockedThemes,
         };
         try {
             sys.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));

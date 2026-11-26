@@ -1,0 +1,327 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build debug/unsigned packages without signing or store upload
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screwout-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  COCOS_VERSION: 3.8.6
+  COCOS_ZIP: CocosCreator-v3.8.6-mac-032501.zip
+  ANDROID_NDK_VERSION: 27.2.12479018
+  ANDROID_COMPILE_SDK_VERSION: 35
+  ANDROID_TARGET_SDK_VERSION: 35
+
+jobs:
+  versions:
+    name: Resolve version/build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.versions.outputs.version }}
+      build: ${{ steps.versions.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: versions
+        run: |
+          eval "$(python3 tools/set_versions.py get)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+  android:
+    name: Android AAB -> Play internal
+    needs: versions
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ needs.versions.outputs.version }}
+      BUILD: ${{ needs.versions.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK tools
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK components
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          sdkmanager "platforms;android-${ANDROID_COMPILE_SDK_VERSION}" "build-tools;35.0.0" "ndk;${ANDROID_NDK_VERSION}"
+
+      - name: Restore Cocos Creator
+        id: cocos-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/cocos-creator
+          key: cocos-creator-${{ env.COCOS_VERSION }}-mac
+
+      - name: Download Cocos Creator
+        if: steps.cocos-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/cocos-creator"
+          URL="https://download.cocos.com/CocosCreator/v${COCOS_VERSION}/${COCOS_ZIP}"
+          for attempt in 1 2 3 4 5; do
+            curl -L --fail -C - -o /tmp/cocos.zip "$URL" || true
+            if unzip -tq /tmp/cocos.zip >/dev/null 2>&1; then
+              echo "Cocos Creator archive verified"
+              break
+            fi
+            echo "::warning::Cocos Creator download attempt $attempt was incomplete"
+            sleep 15
+          done
+          unzip -tq /tmp/cocos.zip
+          unzip -q /tmp/cocos.zip -d "$HOME/cocos-creator"
+
+      - name: Register Cocos Creator
+        run: |
+          set -euo pipefail
+          COCOS="$HOME/cocos-creator/CocosCreator.app/Contents/MacOS/CocosCreator"
+          test -x "$COCOS"
+          echo "COCOS=$COCOS" >> "$GITHUB_ENV"
+
+      - name: Set up Android signing
+        if: ${{ !inputs.dry_run }}
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ -z "$KEYSTORE_B64" || -z "$KEYSTORE_PASSWORD" || -z "$KEY_ALIAS" ]]; then
+            echo "::error::ANDROID_KEYSTORE_* secrets are not configured"
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/screwout-release.keystore"
+          {
+            echo "KEYSTORE=$RUNNER_TEMP/screwout-release.keystore"
+            echo "KEYSTORE_PASS=$KEYSTORE_PASSWORD"
+            echo "KEYSTORE_USER=$KEY_ALIAS"
+          } >> "$GITHUB_ENV"
+
+      - name: Build Android package
+        env:
+          STAGE: ${{ inputs.dry_run && 'debug' || 'release' }}
+          TARGET_SDK: ${{ env.ANDROID_TARGET_SDK_VERSION }}
+          COMPILE_SDK: ${{ env.ANDROID_COMPILE_SDK_VERSION }}
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
+        run: ./tools/build_android.sh
+
+      - name: Stage signed AAB
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp export/android/screwout-release.aab "dist/screwout-$VERSION+$BUILD.aab"
+          (cd dist && shasum -a 256 "screwout-$VERSION+$BUILD.aab" > "screwout-$VERSION+$BUILD.aab.sha256")
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !inputs.dry_run }}
+        with:
+          name: android-release
+          path: |
+            dist/*.aab
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.dry_run }}
+        with:
+          name: android-debug
+          path: export/android/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload to Google Play (internal track)
+        if: ${{ !inputs.dry_run }}
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ]]; then
+            echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is not configured"
+            exit 1
+          fi
+          python3 -m pip install --quiet --break-system-packages 'PyJWT[crypto]' \
+            || python3 -m pip install --quiet 'PyJWT[crypto]'
+          python3 tools/play_upload_release.py \
+            --package tech.zhongbei.screwout \
+            --aab "dist/screwout-$VERSION+$BUILD.aab" \
+            --version "$VERSION"
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/screwout-release.keystore"
+
+  ios:
+    name: iOS IPA -> TestFlight
+    needs: versions
+    runs-on: macos-latest
+    timeout-minutes: 120
+    env:
+      VERSION: ${{ needs.versions.outputs.version }}
+      BUILD: ${{ needs.versions.outputs.build }}
+      APPSTORE_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPSTORE_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+      APPSTORE_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Restore Cocos Creator
+        id: cocos-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/cocos-creator
+          key: cocos-creator-${{ env.COCOS_VERSION }}-mac
+
+      - name: Download Cocos Creator
+        if: steps.cocos-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/cocos-creator"
+          URL="https://download.cocos.com/CocosCreator/v${COCOS_VERSION}/${COCOS_ZIP}"
+          for attempt in 1 2 3 4 5; do
+            curl -L --fail -C - -o /tmp/cocos.zip "$URL" || true
+            if unzip -tq /tmp/cocos.zip >/dev/null 2>&1; then
+              echo "Cocos Creator archive verified"
+              break
+            fi
+            echo "::warning::Cocos Creator download attempt $attempt was incomplete"
+            sleep 15
+          done
+          unzip -tq /tmp/cocos.zip
+          unzip -q /tmp/cocos.zip -d "$HOME/cocos-creator"
+
+      - name: Register Cocos binary
+        run: |
+          set -euo pipefail
+          COCOS="$HOME/cocos-creator/CocosCreator.app/Contents/MacOS/CocosCreator"
+          test -x "$COCOS"
+          echo "COCOS=$COCOS" >> "$GITHUB_ENV"
+
+      - name: Import Apple distribution signing
+        if: ${{ !inputs.dry_run }}
+        env:
+          CERT_P12: ${{ secrets.APPLE_DISTRIBUTION_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ -z "$CERT_P12" || -z "$CERT_PASSWORD" ]]; then
+            echo "::error::APPLE_DISTRIBUTION_CERT_* secrets are not configured"
+            exit 1
+          fi
+          export KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
+          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+          KEYCHAIN="$RUNNER_TEMP/mobile-signing.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" "$HOME/Library/Keychains/login.keychain-db"
+          printf '%s' "$CERT_P12" | base64 -d > "$RUNNER_TEMP/distribution.p12"
+          security import "$RUNNER_TEMP/distribution.p12" -P "$CERT_PASSWORD" \
+            -k "$KEYCHAIN" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Write the ASC API key (provisioning + altool)
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$APPSTORE_KEY_ID" || -z "$APPSTORE_ISSUER" || -z "$APPSTORE_PRIVATE_KEY" ]]; then
+            echo "::error::APPLE_API_* secrets are not configured"
+            exit 1
+          fi
+          mkdir -p "$HOME/.appstoreconnect/private_keys" "$RUNNER_TEMP/asc"
+          printf '%s\n' "$APPSTORE_PRIVATE_KEY" \
+            > "$HOME/.appstoreconnect/private_keys/AuthKey_$APPSTORE_KEY_ID.p8"
+          chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_$APPSTORE_KEY_ID.p8"
+          cp "$HOME/.appstoreconnect/private_keys/AuthKey_$APPSTORE_KEY_ID.p8" \
+            "$RUNNER_TEMP/asc/AuthKey_$APPSTORE_KEY_ID.p8"
+          {
+            echo "ASC_KEY_PATH=$RUNNER_TEMP/asc/AuthKey_$APPSTORE_KEY_ID.p8"
+            echo "ASC_KEY_ID=$APPSTORE_KEY_ID"
+            echo "ASC_ISSUER=$APPSTORE_ISSUER"
+          } >> "$GITHUB_ENV"
+
+      - name: Build (Cocos CLI -> Pods -> Xcode -> IPA)
+        env:
+          STAGE: ${{ inputs.dry_run && 'sim' || 'ipa' }}
+        run: ./tools/build_ios.sh
+
+      - name: Stage artifact
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp export/ios/screwout-$VERSION.ipa "dist/screwout-$VERSION+$BUILD.ipa"
+          (cd dist && shasum -a 256 "screwout-$VERSION+$BUILD.ipa" > "screwout-$VERSION+$BUILD.ipa.sha256")
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !inputs.dry_run }}
+        with:
+          name: ios-release
+          path: |
+            dist/*.ipa
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload to TestFlight
+        if: ${{ !inputs.dry_run }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          test -f "$HOME/.appstoreconnect/private_keys/AuthKey_$APPSTORE_KEY_ID.p8"
+          xcrun altool --upload-app --type ios \
+            --file "dist/screwout-$VERSION+$BUILD.ipa" \
+            --apiKey "$APPSTORE_KEY_ID" --apiIssuer "$APPSTORE_ISSUER" --output-format json
+
+      - name: Attach What's New to the App Store version
+        if: ${{ !inputs.dry_run }}
+        continue-on-error: true   # versions resubmitted after rejection lock whatsNew via API
+        run: |
+          python3 -m pip install --quiet --break-system-packages 'PyJWT[crypto]' \
+            || python3 -m pip install --quiet --user 'PyJWT[crypto]'
+          python3 tools/asc_set_whatsnew.py --version "$VERSION"
+
+      - name: Verify Apple processing
+        if: ${{ !inputs.dry_run }}
+        run: |
+          python3 -m pip install --quiet --break-system-packages 'PyJWT[crypto]' \
+            || python3 -m pip install --quiet --user 'PyJWT[crypto]'
+          python3 tools/asc_verify_build.py --build "$BUILD"
+
+      - name: Remove signing material
+        if: ${{ always() }}
+        run: |
+          security delete-keychain "$RUNNER_TEMP/mobile-signing.keychain-db" >/dev/null 2>&1 || true
+          rm -f "$RUNNER_TEMP/distribution.p12" \
+            "$HOME/.appstoreconnect/private_keys/AuthKey_$APPSTORE_KEY_ID.p8"

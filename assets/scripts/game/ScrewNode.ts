@@ -1,5 +1,5 @@
 import { _decorator, Color, Component, HingeJoint2D, Node, Sprite, UITransform } from 'cc';
-import { ResManager } from '../core/ResManager';
+import { ThemeManager } from '../core/ThemeManager';
 import { SCREW_FALLBACK_COLORS } from '../core/GameTypes';
 
 const { ccclass } = _decorator;
@@ -18,18 +18,23 @@ export class ScrewNode extends Component {
         this.layerGroup = layerGroup;
         this.joint = joint;
 
+        this.applyThemeSprite();
+        const ui = this.node.getComponent(UITransform) || this.node.addComponent(UITransform);
+        ui.setContentSize(56, 56);
+        this.node.name = this.colorId.toString();
+    }
+
+    public applyThemeSprite(): void {
+        if (this.colorId < 0) return;
         const sp = this.node.getComponent(Sprite) || this.node.addComponent(Sprite);
         sp.sizeMode = Sprite.SizeMode.CUSTOM;
-        const sf = ResManager.ins.getGameSprite(`gbz_screw${this.colorId}`);
+        const sf = ThemeManager.ins.getScrewSprite(this.colorId);
         if (sf) {
             sp.spriteFrame = sf;
             sp.color = Color.WHITE.clone();
         } else {
             sp.color = new Color().fromHEX(SCREW_FALLBACK_COLORS[this.colorId] || '#ffffff');
         }
-        const ui = this.node.getComponent(UITransform) || this.node.addComponent(UITransform);
-        ui.setContentSize(56, 56);
-        this.node.name = this.colorId.toString();
     }
 
     public setBoard(board: Node | null): void {

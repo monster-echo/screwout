@@ -22,6 +22,7 @@ export class ResManager {
     private _boardSprites: Map<string, SpriteFrame> = new Map();
     private _uiSprites: Map<string, SpriteFrame> = new Map();
     private _paintSprites: Map<string, SpriteFrame> = new Map();
+    private _themeSprites: Map<string, SpriteFrame> = new Map();
     private _difficultyConfigs: DifficultyConfig[] = [];
     private _artManifest: HDArtManifestItem[] = [];
     private _touchSpine: sp.SkeletonData | null = null;
@@ -33,13 +34,15 @@ export class ResManager {
             this.loadImageDirAsSprites('sprites/games', this._gameSprites),
             this.loadImageDirAsSprites('sprites/boards', this._boardSprites),
             this.loadImageDirAsSprites('sprites/ui_orig', this._uiSprites),
+            this.loadImageDirAsSprites('sprites/themes/dessert', this._themeSprites),
+            this.loadImageDirAsSprites('sprites/themes/nordic', this._themeSprites),
             this.loadImageDirAsSprites('paint', this._paintSprites),
             this.loadDifficultyConfig(),
             this.loadArtManifest(),
             this.loadSpineAsset('spine/touch/touch').then((d) => { this._touchSpine = d; }),
         ]);
         console.log(
-            `[ResManager] loaded games=${this._gameSprites.size}, boards=${this._boardSprites.size}, ui=${this._uiSprites.size}, paint=${this._paintSprites.size}, arts=${this._artManifest.length}, touchSpine=${!!this._touchSpine}`,
+            `[ResManager] loaded games=${this._gameSprites.size}, boards=${this._boardSprites.size}, ui=${this._uiSprites.size}, themes=${this._themeSprites.size}, paint=${this._paintSprites.size}, arts=${this._artManifest.length}, touchSpine=${!!this._touchSpine}`,
         );
         this._coreLoaded = true;
     }
@@ -143,6 +146,10 @@ export class ResManager {
 
     public getPaintSprite(name: string): SpriteFrame | null {
         return this._paintSprites.get(name) || null;
+    }
+
+    public getThemeSprite(name: string): SpriteFrame | null {
+        return this._themeSprites.get(name) || null;
     }
 
     public get artManifest(): HDArtManifestItem[] {

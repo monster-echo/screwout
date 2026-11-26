@@ -1,6 +1,6 @@
 import { _decorator, Color, Component, Graphics, Node, Sprite, UITransform, Vec3 } from 'cc';
 import { SCREW_FALLBACK_COLORS } from '../core/GameTypes';
-import { ResManager } from '../core/ResManager';
+import { ThemeManager } from '../core/ThemeManager';
 
 const { ccclass } = _decorator;
 
@@ -20,7 +20,7 @@ export class HoldingTray extends Component {
         this.screwNumMax = 5;
         this.screwArr = [0, 0, 0, 0, 0, 0, 0];
 
-        const holeSf = ResManager.ins.getUiSprite('gbz_screw_core') || ResManager.ins.getGameSprite('hole');
+        const holeSf = ThemeManager.ins.getHoleSprite();
 
         for (let i = 0; i < this.totalSlots; i++) {
             const slot = new Node(`hole_${i}`);
@@ -91,7 +91,7 @@ export class HoldingTray extends Component {
         screwNode.setScale(Vec3.ONE);
         const sp = screwNode.getComponent(Sprite);
         if (sp) {
-            const sf = ResManager.ins.getGameSprite(`gbz_screw${colorId}`);
+            const sf = ThemeManager.ins.getScrewSprite(colorId);
             if (sf) {
                 sp.spriteFrame = sf;
                 sp.color = Color.WHITE.clone();
@@ -101,6 +101,26 @@ export class HoldingTray extends Component {
         }
         screwNode.name = `${colorId}_${partIndex}`;
         screwNode.active = true;
+    }
+
+    public refreshTheme(): void {
+        const holeSf = ThemeManager.ins.getHoleSprite();
+        for (let i = 0; i < this._slotNodes.length; i++) {
+            const bgSp = this._slotNodes[i].getComponent(Sprite);
+            if (bgSp && holeSf) {
+                bgSp.spriteFrame = holeSf;
+            }
+            const colId = this.screwArr[i];
+            const sNode = this._screwNodes[i];
+            if (colId > 0 && sNode && sNode.active) {
+                const sp = sNode.getComponent(Sprite);
+                const sf = ThemeManager.ins.getScrewSprite(colId);
+                if (sp && sf) {
+                    sp.spriteFrame = sf;
+                    sp.color = Color.WHITE.clone();
+                }
+            }
+        }
     }
 
     public clearAllPending(): void {

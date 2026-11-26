@@ -34,6 +34,7 @@ import { DataManager } from '../core/DataManager';
 import { AudioManager } from '../core/AudioManager';
 import { ResManager } from '../core/ResManager';
 import { MonetizationManager } from '../core/MonetizationManager';
+import { ThemeManager } from '../core/ThemeManager';
 import { ScrewNode } from './ScrewNode';
 import { BoardNode } from './BoardNode';
 import { TargetBox } from './TargetBox';
@@ -80,6 +81,7 @@ export class LevelController extends Component {
     private _boxRandomColorNum = 6;
     private _isOver = false;
     private _inputBlocked = false;
+    private _smashGrantedByAd = false;
 
     private readonly _maxLayerNum = 6;
     private readonly _maxScrewNum = 4;
@@ -196,8 +198,8 @@ export class LevelController extends Component {
             this._trayComp.build(() => this.useSkill(SkillType.UNLOCK_SLOT));
         }
 
-        // Prepare randomized board layer color cycle
-        const palette = this.shuffleArray([...BOARD_PALETTE]);
+        // Prepare randomized board layer color cycle from active theme
+        const palette = this.shuffleArray([...ThemeManager.ins.getBoardPalette()]);
         this._allColors = [...palette, ...palette, ...palette];
 
         const fileIdx = ((levelNumber - 1) % 101 + 101) % 101;
@@ -373,8 +375,88 @@ export class LevelController extends Component {
         this._boxRandomColorNum = Math.max(5, Math.round(this._screwArr.length * 0.1));
     }
 
-    private buildBoards(lvData: LevelData): void {
+    /**
+     * Auto-fits & centers any level whose holes exceed the safe clickable playfield
+     * (fixes off-screen screws on Levels 6, 43, 44, 75, 90 and edge-hugging screws on 20 more levels).
+     * Pre-transforms coordinates before creating Box2D colliders/joints so physics stays 100% exact.
+     */
+    private fitLevelToSafeBounds(lvData: LevelData): LevelData {
+        const SAFE_MIN_X = -315;
+        const SAFE_MAX_X = 315;
+        const SAFE_MIN_Y = -405;
+        const SAFE_MAX_Y = 235;
+        const SAFE_W = SAFE_MAX_X - SAFE_MIN_X;
+        const SAFE_H = SAFE_MAX_Y - SAFE_MIN_Y;
+
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+
+        for (const layer of lvData.layers) {
+            for (const b of layer.boards) {
+                const rad = (b.angle || 0) * Math.PI / 180;
+                const ca = Math.cos(rad);
+                const sa = Math.sin(rad);
+                const sx = b.scale[0];
+                const sy = b.scale[1];
+                for (const h of b.holes) {
+                    const hx = h[0] * sx;
+                    const hy = h[1] * sy;
+                    const wx = b.pos[0] + hx * ca - hy * sa;
+                    const wy = b.pos[1] + hx * sa + hy * ca;
+                    if (wx < minX) minX = wx;
+                    if (wx > maxX) maxX = wx;
+                    if (wy < minY) minY = wy;
+                    if (wy > maxY) maxY = wy;
+                }
+            }
+        }
+
+        if (!Number.isFinite(minX)) return lvData;
+        if (minX >= SAFE_MIN_X && maxX <= SAFE_MAX_X && minY >= SAFE_MIN_Y && maxY <= SAFE_MAX_Y) {
+            return lvData;
+        }
+
+        const spanX = Math.max(1, maxX - minX);
+        const spanY = Math.max(1, maxY - minY);
+        const s = Math.min(1, SAFE_W / spanX, SAFE_H / spanY);
+
+        const sMinX = minX * s;
+        const sMaxX = maxX * s;
+        const sMinY = minY * s;
+        const sMaxY = maxY * s;
+
+        let shiftX = 0;
+        if (sMinX < SAFE_MIN_X || sMaxX > SAFE_MAX_X) {
+            shiftX = ((SAFE_MIN_X + SAFE_MAX_X) * 0.5) - ((sMinX + sMaxX) * 0.5);
+        }
+        let shiftY = 0;
+        if (sMinY < SAFE_MIN_Y || sMaxY > SAFE_MAX_Y) {
+            shiftY = ((SAFE_MIN_Y + SAFE_MAX_Y) * 0.5) - ((sMinY + sMaxY) * 0.5);
+        }
+
+        return {
+            name: lvData.name,
+            totalHoles: lvData.totalHoles,
+            layers: lvData.layers.map((layer) => ({
+                name: layer.name,
+                boards: layer.boards.map((b) => ({
+                    ...b,
+                    pos: [b.pos[0] * s + shiftX, b.pos[1] * s + shiftY],
+                    size: [b.size[0] * s, b.size[1] * s],
+                    boardSize: [b.boardSize[0] * s, b.boardSize[1] * s],
+                    boardPos: [b.boardPos[0] * s, b.boardPos[1] * s],
+                    polygon: b.polygon.map((p) => [p[0] * s, p[1] * s] as [number, number]),
+                    holes: b.holes.map((h) => [h[0] * s, h[1] * s] as [number, number]),
+                })),
+            })),
+        };
+    }
+
+    private buildBoards(rawLvData: LevelData): void {
         if (!this._boardsContainer) return;
+        const lvData = this.fitLevelToSafeBounds(rawLvData);
 
         const root = new Node(lvData.name);
         root.setParent(this._boardsContainer);
@@ -532,14 +614,16 @@ export class LevelController extends Component {
 
         if (isTopVisible) {
             innerSp.color = new Color().fromHEX(this._allColors[layerIndex % this._allColors.length]);
+            frameSp.color = ThemeManager.ins.getBoardFrameColor();
             frameSp.grayscale = false;
             innerSp.grayscale = false;
             boardComp.notActive = false;
         } else {
-            frameSp.grayscale = true;
-            innerSp.grayscale = true;
-            frameSp.color = Color.GRAY.clone();
-            innerSp.color = Color.GRAY.clone();
+            // Soft frosted pearl-lavender veil for deeper layers (replaces muddy dark grey!)
+            frameSp.grayscale = false;
+            innerSp.grayscale = false;
+            frameSp.color = new Color(242, 240, 246, 215);
+            innerSp.color = new Color(214, 212, 224, 185);
             boardComp.notActive = true;
         }
 
@@ -712,7 +796,13 @@ export class LevelController extends Component {
         bComp.isReady = false;
         DataManager.ins.isSkill = false;
         DataManager.ins.skillIndex = -1;
+        // Consume charge only when a board is actually melted (never lost on cancel/restart!)
+        if (!this._smashGrantedByAd) {
+            DataManager.ins.consumeSkill(SkillType.SMASH_BOARD);
+        }
+        this._smashGrantedByAd = false;
         this._events?.onSmashModeChanged(false);
+        this._events?.onCoinsChanged();
 
         const screwsCopy = [...bComp.getScrews()];
         for (const sComp of screwsCopy) {
@@ -968,7 +1058,7 @@ export class LevelController extends Component {
 
             if (slideNode) {
                 const slideSp = slideNode.getComponent(Sprite);
-                const nextSf = ResManager.ins.getGameSprite(`gbz_box${nextColor}`);
+                const nextSf = ThemeManager.ins.getBoxSprite(nextColor);
                 if (slideSp && nextSf) {
                     slideSp.spriteFrame = nextSf;
                     slideSp.color = Color.WHITE.clone();
@@ -1064,6 +1154,13 @@ export class LevelController extends Component {
     }
 
     private onBoardDestroy(boardNode: Node): void {
+        if (ThemeManager.ins.activeConfig.useCrumbParticles) {
+            const bUi = boardNode.getComponent(UITransform);
+            if (bUi) {
+                this.spawnCookieCrumbs(bUi.convertToWorldSpaceAR(Vec3.ZERO));
+            }
+        }
+        MonetizationManager.ins.triggerHaptic('medium');
         const idx = this._boards.indexOf(boardNode);
         if (idx >= 0) {
             this._boards.splice(idx, 1);
@@ -1139,7 +1236,7 @@ export class LevelController extends Component {
 
                 if (frameSp) {
                     frameSp.grayscale = false;
-                    frameSp.color = Color.WHITE.clone();
+                    frameSp.color = ThemeManager.ins.getBoardFrameColor();
                 }
                 if (innerSp) {
                     innerSp.grayscale = false;
@@ -1192,9 +1289,19 @@ export class LevelController extends Component {
         hUi.setContentSize(60, 60);
         const hSp = headNode.addComponent(Sprite);
         hSp.sizeMode = Sprite.SizeMode.CUSTOM;
-        const sf = ResManager.ins.getGameSprite(`gbz_screw${colorId}`);
+        const sf = ThemeManager.ins.getScrewSprite(colorId);
         if (sf) hSp.spriteFrame = sf;
         else hSp.color = new Color().fromHEX(SCREW_FALLBACK_COLORS[colorId] || '#ffffff');
+
+        MonetizationManager.ins.triggerHaptic('light');
+        if (ThemeManager.ins.activeConfig.useGummyBounce) {
+            // Squishy gummy-candy pop feedback when pulling a candy screw!
+            tween(headNode)
+                .to(0.06, { scale: new Vec3(1.28, 0.78, 1) }, { easing: 'quadOut' })
+                .to(0.08, { scale: new Vec3(0.88, 1.22, 1) }, { easing: 'quadOut' })
+                .to(0.07, { scale: Vec3.ONE }, { easing: 'sineOut' })
+                .start();
+        }
 
         const liftPos = new Vec3(startLocal.x, startLocal.y + 38, 0);
         const hoverEnd = new Vec3(endLocal.x, endLocal.y + 34, 0);
@@ -1343,9 +1450,7 @@ export class LevelController extends Component {
 
         // Toggle off Smash-board mode without consuming a charge
         if (skill === SkillType.SMASH_BOARD && DataManager.ins.isSkill && DataManager.ins.skillIndex === SkillType.SMASH_BOARD) {
-            DataManager.ins.isSkill = false;
-            DataManager.ins.skillIndex = -1;
-            this._events?.onSmashModeChanged(false);
+            this.cancelSmashMode();
             return;
         }
 
@@ -1356,6 +1461,23 @@ export class LevelController extends Component {
         }
         if (skill === SkillType.CLEAR_TRAY && (!this._trayComp || this._trayComp.getScrews().length === 0)) {
             this._events?.onToast('Holding tray is empty');
+            return;
+        }
+
+        if (skill === SkillType.SMASH_BOARD) {
+            if (DataManager.ins.getSkillCount(skill) > 0) {
+                this._smashGrantedByAd = false;
+                DataManager.ins.isSkill = true;
+                DataManager.ins.skillIndex = SkillType.SMASH_BOARD;
+                this._events?.onSmashModeChanged(true);
+            } else {
+                MonetizationManager.ins.showRewardedAd('skill_refill', () => {
+                    this._smashGrantedByAd = true;
+                    DataManager.ins.isSkill = true;
+                    DataManager.ins.skillIndex = SkillType.SMASH_BOARD;
+                    this._events?.onSmashModeChanged(true);
+                });
+            }
             return;
         }
 
@@ -1382,10 +1504,6 @@ export class LevelController extends Component {
                         .start();
                 }
                 this._events?.onToast('Holding tray cleared!');
-            } else if (skill === SkillType.SMASH_BOARD) {
-                DataManager.ins.isSkill = true;
-                DataManager.ins.skillIndex = SkillType.SMASH_BOARD;
-                this._events?.onSmashModeChanged(true);
             }
             this._events?.onCoinsChanged();
         };
@@ -1396,6 +1514,14 @@ export class LevelController extends Component {
         } else {
             MonetizationManager.ins.showRewardedAd('skill_refill', execute);
         }
+    }
+
+    public cancelSmashMode(): void {
+        if (!DataManager.ins.isSkill) return;
+        DataManager.ins.isSkill = false;
+        DataManager.ins.skillIndex = -1;
+        this._smashGrantedByAd = false;
+        this._events?.onSmashModeChanged(false);
     }
 
     public onBoxLockClick(box: TargetBox): void {
@@ -1699,5 +1825,100 @@ export class LevelController extends Component {
             arr[j] = tmp;
         }
         return arr;
+    }
+
+    /** Adjust top target boxes & holding tray for iPhone Dynamic Island / Android notch Safe Area. */
+    public applySafeArea(topInset: number): void {
+        const extra = Math.max(0, Math.min(72, Math.round(topInset)));
+        const rbW = this._rootBoxes?.getComponent(Widget);
+        if (rbW) {
+            rbW.top = 98 + extra;
+            rbW.updateAlignment();
+        }
+        const biW = this._boxInLayer?.getComponent(Widget);
+        if (biW) {
+            biW.top = 98 + extra;
+            biW.updateAlignment();
+        }
+        const trW = this._trayNode?.getComponent(Widget);
+        if (trW) {
+            trW.top = 304 + extra;
+            trW.updateAlignment();
+        }
+        if (this._boardsContainer) {
+            this._boardsContainer.setPosition(0, -45 - Math.round(extra * 0.45), 0);
+        }
+    }
+
+    /** Live-refresh all active boards, screws, boxes, and holding tray when player switches themes. */
+    public refreshThemeVisuals(): void {
+        const palette = ThemeManager.ins.getBoardPalette();
+        this._allColors = [...palette, ...palette, ...palette];
+        const frameCol = ThemeManager.ins.getBoardFrameColor();
+
+        for (const bNode of this._boards) {
+            if (!bNode || !bNode.isValid) continue;
+            const bComp = bNode.getComponent(BoardNode);
+            if (!bComp || bComp.notActive) continue;
+            const frameSp = bNode.getComponent(Sprite);
+            const innerSp = bNode.getChildByName('board')?.getComponent(Sprite);
+            if (frameSp) frameSp.color = frameCol.clone();
+            if (innerSp) {
+                innerSp.color = new Color().fromHEX(this._allColors[bComp.rootBoardsIndex % this._allColors.length]);
+            }
+        }
+        for (const sNode of this._screws) {
+            if (!sNode || !sNode.isValid) continue;
+            sNode.getComponent(ScrewNode)?.applyThemeSprite();
+        }
+        if (this._rootBoxes) {
+            for (const bNode of this._rootBoxes.children) {
+                bNode.getComponent(TargetBox)?.refreshTheme();
+            }
+        }
+        this._trayComp?.refreshTheme();
+    }
+
+    /** Sweet Dessert ASMR burst: golden biscuit crumbs & pastel sugar sprinkles when a cookie board drops. */
+    private spawnCookieCrumbs(worldPos: Vec3): void {
+        if (!this._fxLayer) return;
+        const fxUi = this._fxLayer.getComponent(UITransform);
+        if (!fxUi) return;
+        const local = fxUi.convertToNodeSpaceAR(worldPos);
+        const startX = Math.max(-280, Math.min(280, local.x));
+        const startY = Math.max(-460, Math.min(180, local.y + 120));
+        const crumbColors = ['#e6a15c', '#f5c78e', '#ff9ec4', '#ffe28a', '#95ecc7', '#ffffff'];
+
+        for (let i = 0; i < 12; i++) {
+            const p = new Node(`crumb_${i}`);
+            p.setParent(this._fxLayer);
+            p.setPosition(startX + (Math.random() - 0.5) * 90, startY + (Math.random() - 0.5) * 40, 0);
+            const sz = 8 + Math.random() * 10;
+            const g = p.addComponent(Graphics);
+            g.fillColor = new Color().fromHEX(crumbColors[i % crumbColors.length]);
+            if (i % 3 === 0) {
+                g.roundRect(-sz * 0.8, -sz * 0.35, sz * 1.6, sz * 0.7, sz * 0.3);
+            } else {
+                g.circle(0, 0, sz * 0.55);
+            }
+            g.fill();
+            const op = p.addComponent(UIOpacity);
+            op.opacity = 240;
+
+            const dx = (Math.random() - 0.5) * 210;
+            const dy = 70 + Math.random() * 130;
+            const dur = 0.42 + Math.random() * 0.25;
+            tween(p)
+                .to(dur, {
+                    position: new Vec3(p.position.x + dx, p.position.y + dy - 160, 0),
+                    angle: (Math.random() - 0.5) * 420,
+                    scale: new Vec3(0.3, 0.3, 1),
+                }, { easing: 'quadOut' })
+                .call(() => {
+                    if (p.isValid) p.destroy();
+                })
+                .start();
+            tween(op).delay(dur * 0.45).to(dur * 0.55, { opacity: 0 }).start();
+        }
     }
 }

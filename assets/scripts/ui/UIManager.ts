@@ -18,6 +18,7 @@ import { DataManager } from '../core/DataManager';
 import { AudioManager } from '../core/AudioManager';
 import { ResManager } from '../core/ResManager';
 import { MonetizationManager } from '../core/MonetizationManager';
+import { ThemeManager } from '../core/ThemeManager';
 import { PixelArtDef, PixelGalleryService } from '../meta/PixelGalleryData';
 import { createButton, createLabel, createPanel } from './UIHelper';
 
@@ -30,6 +31,7 @@ export interface UIActions {
     onNextLevel: () => void;
     onRevive: () => void;
     onUseSkill: (skill: SkillType) => void;
+    onCancelSmash?: () => void;
 }
 
 @ccclass('UIManager')
@@ -51,18 +53,33 @@ export class UIManager extends Component {
 
     // Home Menu (faithful to original GbzMenuLayer)
     private _menuNode: Node | null = null;
+    private _menuBgSprite: Sprite | null = null;
+    private _menuLogoNode: Node | null = null;
     private _pixelCanvasNode: Node | null = null;
     private _menuProgressFill: Node | null = null;
     private _menuProgressLbl: Label | null = null;
     private _playBtnLbl: Label | null = null;
+    private _pauseBtnNode: Node | null = null;
+    private _lvPillNode: Node | null = null;
+    private _boxProgNode: Node | null = null;
+    private _skillBarNode: Node | null = null;
+    private _menuSetBtn: Node | null = null;
+    private _menuThemeBtn: Node | null = null;
+    private _menuBottomRow: Node | null = null;
 
     // Popups
     private _pauseNode: Node | null = null;
+    private _pauseLevelLbl: Label | null = null;
+    private _pauseSoundNode: Node | null = null;
+    private _pauseSoundLbl: Label | null = null;
+    private _pauseVibeNode: Node | null = null;
+    private _pauseVibeLbl: Label | null = null;
     private _winNode: Node | null = null;
     private _winCountLbl: Label | null = null;
 
     // Full-screen Paint Layer (matches original GbzPaintLayer)
     private _paintNode: Node | null = null;
+    private _paintBgSprite: Sprite | null = null;
     private _paintArtCanvas: Node | null = null;
     private _paintFinishSprite: Sprite | null = null;
     private _paintFlyLayer: Node | null = null;
@@ -83,6 +100,10 @@ export class UIManager extends Component {
     private _settingsNode: Node | null = null;
     private _soundBtnNode: Node | null = null;
     private _soundBtnLbl: Label | null = null;
+    private _vibeBtnNode: Node | null = null;
+    private _vibeBtnLbl: Label | null = null;
+    private _themeNode: Node | null = null;
+    private _themeListRoot: Node | null = null;
     private _galleryNode: Node | null = null;
     private _galleryCountLbl: Label | null = null;
     private _galleryListRoot: Node | null = null;
@@ -110,6 +131,7 @@ export class UIManager extends Component {
         this.buildPaintLayer();
         this.buildLosePopup();
         this.buildSettingsPopup();
+        this.buildThemeModal();
         this.buildGalleryModal();
         this.buildToast();
 
@@ -162,6 +184,7 @@ export class UIManager extends Component {
 
         // Top-left Pause button
         const pauseBtn = this.makeSpriteFit('btn_pause', this._hudNode, 'btn_pause', 74, 74);
+        this._pauseBtnNode = pauseBtn;
         const pW = pauseBtn.addComponent(Widget);
         pW.isAlignTop = true;
         pW.isAlignLeft = true;
@@ -169,11 +192,12 @@ export class UIManager extends Component {
         pW.left = 20;
         this.bindTap(pauseBtn, () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
-            if (this._pauseNode) this._pauseNode.active = true;
+            this.openPause();
         });
 
         // Top-center capsule "LEVEL N"
-        const lvPill = this.makeSpriteFit('lv_pill', this._hudNode, '倒计时关数框', 240, 46);
+        const lvPill = this.makeSpriteFit('lv_pill', this._hudNode, 'level_pill', 240, 46);
+        this._lvPillNode = lvPill;
         const lW = lvPill.addComponent(Widget);
         lW.isAlignTop = true;
         lW.isAlignHorizontalCenter = true;
@@ -182,6 +206,7 @@ export class UIManager extends Component {
 
         // Right-side 3D shipping crate progress
         const boxProg = new Node('c_item');
+        this._boxProgNode = boxProg;
         boxProg.setParent(this._hudNode);
         const bpUi = boxProg.addComponent(UITransform);
         bpUi.setContentSize(120, 110);
@@ -196,18 +221,25 @@ export class UIManager extends Component {
         this._progressLabel = createLabel('prog_lbl', boxProg, '0%', 24, '#0f172a', 120, 34);
         this._progressLabel.node.setPosition(0, -34, 0);
 
-        // Smash-board active banner
-        this._smashBanner = createPanel('SmashBanner', this._hudNode, 440, 52, '#ef4444', 240, 26);
+        // Smash-board active banner with one-tap CANCEL button (zero charge lost on cancel)
+        this._smashBanner = createPanel('SmashBanner', this._hudNode, 520, 56, '#ef4444', 245, 28);
         this._smashBanner.setPosition(0, 232, 0);
-        createLabel('SmashTxt', this._smashBanner, 'Tap any board to melt it!', 24, '#ffffff', 420, 40);
+        const smTxt = createLabel('SmashTxt', this._smashBanner, 'Tap any board to melt!', 23, '#ffffff', 340, 38);
+        smTxt.isBold = true;
+        smTxt.node.setPosition(-54, 0, 0);
+        createButton('btn_cancel_smash', this._smashBanner, 'CANCEL', 112, 38, '#991b1b', () => {
+            AudioManager.ins.play(AudioClips.GAME_CLICK);
+            this._actions?.onCancelSmash?.();
+        }, 18, '#ffffff', 19).setPosition(186, 0, 0);
         this._smashBanner.active = false;
 
         // Bottom 3 pearl-ivory 3D ceramic skill buttons (+1 SLOT / CLEAR / MELT)
         const skillBar = new Node('skills');
+        this._skillBarNode = skillBar;
         skillBar.setParent(this._hudNode);
         const sbUi = skillBar.addComponent(UITransform);
-        sbUi.setContentSize(1083, 207);
-        skillBar.setScale(0.58, 0.58, 1);
+        sbUi.setContentSize(960, 216);
+        skillBar.setScale(0.62, 0.62, 1);
         const sbW = skillBar.addComponent(Widget);
         sbW.isAlignBottom = true;
         sbW.isAlignHorizontalCenter = true;
@@ -221,28 +253,28 @@ export class UIManager extends Component {
             iconScale: number;
             x: number;
         }[] = [
-            { name: 'btn_skill_core', type: SkillType.UNLOCK_SLOT, label: '+1 SLOT', iconSprite: 'icon_skill_slot', iconScale: 0.96, x: -401 },
-            { name: 'btn_skill_screw', type: SkillType.CLEAR_TRAY, label: 'CLEAR', iconSprite: 'UI_icon3', iconScale: 0.95, x: 0 },
-            { name: 'btn_skill_board', type: SkillType.SMASH_BOARD, label: 'MELT', iconSprite: 'UI_icon2', iconScale: 0.95, x: 401 },
+            { name: 'btn_skill_core', type: SkillType.UNLOCK_SLOT, label: '+1 SLOT', iconSprite: 'icon_skill_slot', iconScale: 0.98, x: -320 },
+            { name: 'btn_skill_screw', type: SkillType.CLEAR_TRAY, label: 'CLEAR', iconSprite: 'UI_icon3', iconScale: 0.96, x: 0 },
+            { name: 'btn_skill_board', type: SkillType.SMASH_BOARD, label: 'MELT', iconSprite: 'UI_icon2', iconScale: 0.96, x: 320 },
         ];
 
         for (const cfg of skillConfigs) {
-            const btn = this.makeSpriteNode(cfg.name, skillBar, 'skill_btn_bg', 281, 207);
+            const btn = this.makeSpriteNode(cfg.name, skillBar, 'skill_btn_bg', 224, 216);
             btn.setPosition(cfg.x, 0, 0);
 
-            const icon = this.makeSpriteFit('icon', btn, cfg.iconSprite, 106, 106);
+            const icon = this.makeSpriteFit('icon', btn, cfg.iconSprite, 108, 108);
             icon.setScale(cfg.iconScale, cfg.iconScale, 1);
-            icon.setPosition(0, 30, 0);
+            icon.setPosition(0, 32, 0);
 
-            const txtLbl = createLabel('txt', btn, cfg.label, 31, '#ffffff', 220, 42);
+            const txtLbl = createLabel('txt', btn, cfg.label, 29, '#ffffff', 180, 38);
             txtLbl.isBold = true;
-            txtLbl.node.setPosition(0, -48, 0);
+            txtLbl.node.setPosition(0, -68, 0);
 
-            const badge = this.makeSpriteNode('plus', btn, 'badge_count', 76, 76);
-            badge.setPosition(116, 84, 0);
+            const badge = this.makeSpriteNode('plus', btn, 'badge_count', 72, 72);
+            badge.setPosition(94, 88, 0);
             const badgeSp = badge.getComponent(Sprite);
             if (badgeSp) this._skillBadgeSprites.set(cfg.type, badgeSp);
-            const countLbl = createLabel('cnt', badge, '1', 32, '#ffffff', 72, 42);
+            const countLbl = createLabel('cnt', badge, '1', 30, '#ffffff', 68, 38);
             countLbl.isBold = true;
             countLbl.node.setPosition(0, 2, 0);
             this._skillBadgeLabels.set(cfg.type, countLbl);
@@ -267,12 +299,17 @@ export class UIManager extends Component {
         this._menuNode.addComponent(BlockInputEvents);
 
         const bg = this.makeSpriteNode('bg', this._menuNode, 'bg_menu_hex', 750, 1334);
+        const bgSp = bg.getComponent(Sprite);
+        const menuBgSf = ThemeManager.ins.getMenuBgSprite();
+        if (bgSp && menuBgSf) bgSp.spriteFrame = menuBgSf;
+        this._menuBgSprite = bgSp;
         const bgW = bg.addComponent(Widget);
         bgW.isAlignTop = bgW.isAlignBottom = bgW.isAlignLeft = bgW.isAlignRight = true;
         bgW.top = bgW.bottom = bgW.left = bgW.right = 0;
 
         // Top-left Settings gear (just like original!)
         const setBtn = this.makeSpriteFit('btn_setting', this._menuNode, 'UI_icon_setting', 82, 82);
+        this._menuSetBtn = setBtn;
         const setW = setBtn.addComponent(Widget);
         setW.isAlignTop = true;
         setW.isAlignLeft = true;
@@ -283,29 +320,74 @@ export class UIManager extends Component {
             this.openSettings();
         });
 
-        // 3D Logo
-        const logo = this.makeSpriteFit('game_logo', this._menuNode, 'logo_screw_jam', 460, 108);
-        logo.setPosition(0, 476, 0);
+        // Top-right glossy Themes / Skins Shop pill button
+        const themeBtn = new Node('btn_themes');
+        themeBtn.setParent(this._menuNode);
+        themeBtn.addComponent(UITransform).setContentSize(172, 66);
+        const thG = themeBtn.addComponent(Graphics);
+        thG.fillColor = new Color().fromHEX('#be185d');
+        thG.roundRect(-86, -35, 172, 66, 33);
+        thG.fill();
+        thG.fillColor = new Color().fromHEX('#ec4899');
+        thG.roundRect(-86, -31, 172, 62, 31);
+        thG.fill();
+        thG.fillColor = new Color(255, 255, 255, 65);
+        thG.roundRect(-72, 2, 144, 22, 11);
+        thG.fill();
+        thG.strokeColor = Color.WHITE.clone();
+        thG.lineWidth = 4;
+        thG.roundRect(-84, -31, 168, 62, 31);
+        thG.stroke();
+        const thLbl = createLabel('lbl', themeBtn, 'THEMES', 23, '#ffffff', 156, 34);
+        thLbl.isBold = true;
+        thLbl.node.setPosition(0, -1, 0);
+        this.bindTap(themeBtn, () => {
+            AudioManager.ins.play(AudioClips.GAME_CLICK);
+            this.openThemes();
+        });
+        this._menuThemeBtn = themeBtn;
+        const thW = themeBtn.addComponent(Widget);
+        thW.isAlignTop = true;
+        thW.isAlignRight = true;
+        thW.top = 34;
+        thW.right = 24;
+
+        // Theme-aware 3D Logo (Sweet Jam candy logo in Dessert theme, classic Screw Jam in Acrylic/Nordic)
+        const logo = new Node('game_logo');
+        logo.setParent(this._menuNode);
+        logo.addComponent(UITransform).setContentSize(480, 160);
+        const logoSp = logo.addComponent(Sprite);
+        logoSp.sizeMode = Sprite.SizeMode.CUSTOM;
+        this._menuLogoNode = logo;
+        logo.setPosition(0, 486, 0);
+        this.refreshMenuLogo();
 
         // Hero Centerpiece: Large 3D Oak Wooden Frame showing live Pixel Art progress
         const woodFrame = this.makeSpriteNode('wood_frame', this._menuNode, 'wood_frame', 524, 524);
-        woodFrame.setPosition(0, 140, 0);
+        woodFrame.setPosition(0, 128, 0);
 
         this._pixelCanvasNode = new Node('pixel_canvas');
         this._pixelCanvasNode.setParent(woodFrame);
         this._pixelCanvasNode.setPosition(0, 0, 0);
 
-        // Clean original yellow progress bar right below wooden frame ("Completion: 33%")
+        // Clean original yellow progress bar right below wooden frame (FILLED horizontal, hidden at 0%)
         const barTrack = this.makeSpriteNode('jdt_track', this._menuNode, 'UI_jdt_1', 490, 44);
-        barTrack.setPosition(0, -162, 0);
+        barTrack.setPosition(0, -174, 0);
         this._menuProgressFill = this.makeSpriteNode('jdt_fill', barTrack, 'UI_jdt_2', 490, 44);
-        this._menuProgressFill.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
-        this._menuProgressFill.setPosition(-245, 0, 0);
+        const fillSp = this._menuProgressFill.getComponent(Sprite);
+        if (fillSp) {
+            fillSp.type = Sprite.Type.FILLED;
+            fillSp.fillType = Sprite.FillType.HORIZONTAL;
+            fillSp.fillStart = 0;
+            fillSp.fillRange = 0;
+        }
+        this._menuProgressFill.setPosition(0, 0, 0);
         this._menuProgressLbl = createLabel('jdt_lbl', barTrack, 'Completion: 0%', 24, '#ffffff', 380, 36);
         this._menuProgressLbl.isBold = true;
 
         // Bottom Row (matching original clean layout: My Artworks on left + big PLAY CTA center-right)
         const bottomRow = new Node('bottom_row');
+        this._menuBottomRow = bottomRow;
         bottomRow.setParent(this._menuNode);
         const brUi = bottomRow.addComponent(UITransform);
         brUi.setContentSize(690, 146);
@@ -314,7 +396,7 @@ export class UIManager extends Component {
         brW.isAlignHorizontalCenter = true;
         brW.bottom = 96;
 
-        // Left: My Artworks Gallery button (original 我的作品)
+        // Left: My Artworks Gallery button
         const galBtn = this.makeSpriteNode('btn_gallery', bottomRow, 'icon_menu_gallery', 132, 124);
         galBtn.setPosition(-256, 4, 0);
         const galLbl = createLabel('g_lbl', galBtn, 'MY ART', 20, '#ffffff', 120, 26);
@@ -326,7 +408,7 @@ export class UIManager extends Component {
         });
 
         // Center-Right: Big glossy PLAY button
-        const startBtn = this.makeSpriteNode('btn_start', bottomRow, '按键1', 420, 126);
+        const startBtn = this.makeSpriteNode('btn_start', bottomRow, 'btn_play', 420, 126);
         startBtn.setPosition(62, 0, 0);
         this._playBtnLbl = createLabel('start_lbl', startBtn, 'PLAY · LEVEL 1', 38, '#ffffff', 380, 56);
         this._playBtnLbl.isBold = true;
@@ -403,8 +485,10 @@ export class UIManager extends Component {
             this._menuProgressLbl.string = `${art.title} · ${pct}%`;
         }
         if (this._menuProgressFill) {
-            const ratio = Math.max(0.05, Math.min(1, filled / Math.max(1, total)));
-            this._menuProgressFill.setScale(ratio, 1, 1);
+            const ratio = Math.max(0, Math.min(1, filled / Math.max(1, total)));
+            this._menuProgressFill.active = ratio > 0.001;
+            const sp = this._menuProgressFill.getComponent(Sprite);
+            if (sp) sp.fillRange = Math.max(0.06, ratio);
         }
     }
 
@@ -424,21 +508,28 @@ export class UIManager extends Component {
         const boxStage = createPanel('box_stage', card, 480, 290, '#eff6ff', 255, 24);
         boxStage.setPosition(0, 130, 0);
 
-        // Pile of colorful 3D screws peeking out of the top of the shipping crate
+        // 3-layer true 3D crate: back cavity -> colorful screws INSIDE box -> front flaps overlay!
+        const crateBack = this.makeSpriteFit('win_crate_back', boxStage, 'xzx', 240, 202);
+        crateBack.setPosition(0, -28, 0);
+
         const pile = new Node('win_pile');
         pile.setParent(boxStage);
-        pile.setPosition(0, 18, 0);
+        pile.setPosition(0, 6, 0);
         const pileSpecs: [number, number, number][] = [
-            [-62, 34, 1], [-24, 48, 2], [18, 52, 3], [56, 36, 4],
-            [-48, 14, 5], [-8, 24, 6], [34, 22, 7], [68, 12, 8],
-            [-30, -4, 9], [12, 4, 10], [46, -2, 2],
+            [-42, 22, 1], [-12, 28, 2], [18, 26, 3], [44, 18, 4],
+            [-32, 4, 5], [0, 10, 6], [30, 6, 7],
+            [-18, -10, 8], [14, -8, 10],
         ];
         for (const [px, py, cId] of pileSpecs) {
-            const s = this.makeSpriteNode(`wp_${cId}`, pile, `gbz_screw${cId}`, 44, 44);
+            const s = this.makeSpriteNode(`wp_${cId}`, pile, `gbz_screw${cId}`, 42, 42);
+            const tSf = ThemeManager.ins.getScrewSprite(cId);
+            const sSp = s.getComponent(Sprite);
+            if (sSp && tSf) sSp.spriteFrame = tSf;
             s.setPosition(px, py, 0);
         }
-        const crate = this.makeSpriteFit('win_crate', boxStage, 'xzx', 240, 196);
-        crate.setPosition(0, -34, 0);
+
+        const crateFront = this.makeSpriteFit('win_crate_front', boxStage, 'xzx_front', 240, 202);
+        crateFront.setPosition(0, -28, 0);
 
         // "Awesome! Collected N Screws!"
         this._winCountLbl = createLabel('win_cnt', card, 'Awesome! Collected 15 Screws!', 28, '#0284c7', 500, 42);
@@ -473,8 +564,12 @@ export class UIManager extends Component {
         pW.top = pW.bottom = pW.left = pW.right = 0;
         this._paintNode.addComponent(BlockInputEvents);
 
-        // Full-bleed sky background matching original GbzPaintLayer
+        // Full-bleed theme-aware background
         const bg = this.makeSpriteNode('bg', this._paintNode, 'bg_menu_hex', 750, 1334);
+        const bgSp = bg.getComponent(Sprite);
+        const themeBg = ThemeManager.ins.getMenuBgSprite();
+        if (bgSp && themeBg) bgSp.spriteFrame = themeBg;
+        this._paintBgSprite = bgSp;
         const bgW = bg.addComponent(Widget);
         bgW.isAlignTop = bgW.isAlignBottom = bgW.isAlignLeft = bgW.isAlignRight = true;
         bgW.top = bgW.bottom = bgW.left = bgW.right = 0;
@@ -490,26 +585,35 @@ export class UIManager extends Component {
         this._paintFlyLayer.setParent(wf);
         this._paintFlyLayer.setPosition(0, 0, 0);
 
-        // Yellow Completion Progress Bar directly under wooden frame
+        // Yellow Completion Progress Bar directly under wooden frame (FILLED horizontal, hidden at 0%)
         const barTrack = this.makeSpriteNode('paint_jdt_track', this._paintNode, 'UI_jdt_1', 490, 44);
         barTrack.setPosition(0, -40, 0);
         this._paintProgFill = this.makeSpriteNode('paint_jdt_fill', barTrack, 'UI_jdt_2', 490, 44);
-        this._paintProgFill.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
-        this._paintProgFill.setPosition(-245, 0, 0);
+        const pfSp = this._paintProgFill.getComponent(Sprite);
+        if (pfSp) {
+            pfSp.type = Sprite.Type.FILLED;
+            pfSp.fillType = Sprite.FillType.HORIZONTAL;
+            pfSp.fillStart = 0;
+            pfSp.fillRange = 0;
+        }
+        this._paintProgFill.setPosition(0, 0, 0);
         this._paintProgLbl = createLabel('paint_jdt_lbl', barTrack, 'Completion: 0%', 24, '#ffffff', 380, 34);
         this._paintProgLbl.isBold = true;
 
-        // Lower-center: 3D Shipping Crate filled with screws that empty out as you shoot!
+        // Lower-center: 3-layer 3D Shipping Crate (back cavity -> screws INSIDE -> front flaps on top!)
         const crateRoot = new Node('crate_root');
         crateRoot.setParent(this._paintNode);
         crateRoot.setPosition(0, -252, 0);
 
+        const crateSp = this.makeSpriteFit('paint_crate', crateRoot, 'xzx', 260, 220);
+        crateSp.setPosition(0, -14, 0);
+
         this._paintBoxPile = new Node('crate_pile');
         this._paintBoxPile.setParent(crateRoot);
-        this._paintBoxPile.setPosition(0, 56, 0);
+        this._paintBoxPile.setPosition(0, 24, 0);
 
-        const crateSp = this.makeSpriteFit('paint_crate', crateRoot, 'xzx', 260, 212);
-        crateSp.setPosition(0, -14, 0);
+        const crateFrontSp = this.makeSpriteFit('paint_crate_front', crateRoot, 'xzx_front', 260, 220);
+        crateFrontSp.setPosition(0, -14, 0);
 
         // Hint text above shoot button ("Hold to shoot continuously")
         this._paintTipLbl = createLabel('tip_lbl', this._paintNode, 'Hold to shoot continuously', 24, '#e11d48', 420, 34);
@@ -600,14 +704,24 @@ export class UIManager extends Component {
         // Shoot real screws collected from this level (min ~110 so even Lv 1 advances ~33% of a 334-screw HD artwork!)
         this._paintScrewsLeft = Math.max(Math.ceil(art.cells.length / 3), Math.min(180, this._lastWonTotalScrews));
 
-        // Populate visual cluster of colorful 3D screws inside the shipping crate mouth
-        const visualPileCount = Math.min(28, this._paintScrewsLeft);
+        // Populate visual cluster of colorful theme screws nestled INSIDE the diamond crate cavity!
+        const visualPileCount = Math.min(26, this._paintScrewsLeft);
         for (let i = 0; i < visualPileCount; i++) {
             const cId = 1 + (i % 10);
             const s = this.makeSpriteNode(`pile_${i}`, this._paintBoxPile, `gbz_screw${cId}`, 38, 38);
-            s.setPosition((Math.random() - 0.5) * 145, (Math.random() - 0.5) * 44, 0);
+            const tSf = ThemeManager.ins.getScrewSprite(cId);
+            const sSp = s.getComponent(Sprite);
+            if (sSp && tSf) sSp.spriteFrame = tSf;
+            // Diamond-shaped distribution fitting inside the open box mouth (between back & front flaps)
+            const u = (Math.random() - 0.5) * 2; // -1..1
+            const v = (Math.random() - 0.5) * 2;
+            const px = (u - v) * 44;
+            const py = (u + v) * 18 + 6;
+            s.setPosition(px, py, 0);
             s.angle = Math.random() * 360;
         }
+        const pBg = ThemeManager.ins.getMenuBgSprite();
+        if (this._paintBgSprite && pBg) this._paintBgSprite.spriteFrame = pBg;
 
         this._paintFinishSprite = this.drawHDArtInFrame(this._paintArtCanvas, art, this._paintCurIndex, 388);
         this.updatePaintUI();
@@ -620,10 +734,13 @@ export class UIManager extends Component {
     private updatePaintUI(): void {
         if (!this._paintArt) return;
         const total = this._paintArt.cells.length;
-        const pct = Math.round((this._paintCurIndex / Math.max(1, total)) * 100);
+        const ratio = Math.max(0, Math.min(1, this._paintCurIndex / Math.max(1, total)));
+        const pct = Math.round(ratio * 100);
         if (this._paintProgLbl) this._paintProgLbl.string = `Completion: ${pct}%`;
         if (this._paintProgFill) {
-            this._paintProgFill.setScale(Math.max(0.05, Math.min(1, this._paintCurIndex / Math.max(1, total))), 1, 1);
+            this._paintProgFill.active = ratio > 0.001;
+            const sp = this._paintProgFill.getComponent(Sprite);
+            if (sp) sp.fillRange = Math.max(0.06, ratio);
         }
         if (this._paintShotLbl) {
             this._paintShotLbl.string = `SHOOT SCREWS (${this._paintScrewsLeft})`;
@@ -726,33 +843,63 @@ export class UIManager extends Component {
 
     private buildPausePopup(): void {
         this._pauseNode = createPanel('GbzExitLayer', this.node, 750, 1334, '#000000', 165, 0, true);
-        const card = this.makeSpriteNode('panel', this._pauseNode, 'UI_db2', 520, 560);
+        const card = this.makeSpriteNode('panel', this._pauseNode, 'UI_db2', 540, 720);
 
         const closeBtn = this.makeSpriteFit('btn_close', card, 'btn_close', 58, 58);
-        closeBtn.setPosition(222, 238, 0);
+        closeBtn.setPosition(230, 314, 0);
         this.bindTap(closeBtn, () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             if (this._pauseNode) this._pauseNode.active = false;
         });
 
-        createLabel('title', card, 'PAUSED', 42, '#1e293b', 280, 54).node.setPosition(0, 190, 0);
+        createLabel('title', card, 'PAUSED', 42, '#1e293b', 280, 52).node.setPosition(0, 274, 0);
+        this._pauseLevelLbl = createLabel('lv_sub', card, 'LEVEL 1', 22, '#64748b', 240, 30);
+        this._pauseLevelLbl.isBold = true;
+        this._pauseLevelLbl.node.setPosition(0, 232, 0);
 
-        createButton('btn_continue', card, 'RESUME', 330, 76, '#22c55e', () => {
+        // Quick inline Sound & Haptics toggle row (players can mute mid-level without quitting!)
+        const pSound = createButton('p_sound', card, 'SFX: ON', 180, 56, '#0ea5e9', () => {
+            DataManager.ins.soundEnabled = !DataManager.ins.soundEnabled;
+            DataManager.ins.save();
+            this.refreshSettingsLabels();
+            if (DataManager.ins.soundEnabled) AudioManager.ins.play(AudioClips.GAME_CLICK);
+        }, 22, '#ffffff', 18);
+        pSound.setPosition(-98, 168, 0);
+        this._pauseSoundNode = pSound;
+        this._pauseSoundLbl = pSound.getComponentInChildren(Label);
+
+        const pVibe = createButton('p_vibe', card, 'HAPTIC: ON', 180, 56, '#10b981', () => {
+            DataManager.ins.vibrateEnabled = !DataManager.ins.vibrateEnabled;
+            DataManager.ins.save();
+            this.refreshSettingsLabels();
+            if (DataManager.ins.vibrateEnabled) MonetizationManager.ins.triggerHaptic('medium');
+        }, 21, '#ffffff', 18);
+        pVibe.setPosition(98, 168, 0);
+        this._pauseVibeNode = pVibe;
+        this._pauseVibeLbl = pVibe.getComponentInChildren(Label);
+
+        createButton('btn_continue', card, 'RESUME', 360, 74, '#22c55e', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             if (this._pauseNode) this._pauseNode.active = false;
-        }, 30, '#ffffff', 22).setPosition(0, 62, 0);
+        }, 30, '#ffffff', 22).setPosition(0, 74, 0);
 
-        createButton('btn_restart', card, 'RESTART', 330, 76, '#f59e0b', () => {
+        createButton('btn_theme', card, 'THEMES', 360, 74, '#ec4899', () => {
+            AudioManager.ins.play(AudioClips.GAME_CLICK);
+            if (this._pauseNode) this._pauseNode.active = false;
+            this.openThemes();
+        }, 30, '#ffffff', 22).setPosition(0, -18, 0);
+
+        createButton('btn_restart', card, 'RESTART', 360, 74, '#f59e0b', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             if (this._pauseNode) this._pauseNode.active = false;
             this._actions?.onRestart();
-        }, 30, '#ffffff', 22).setPosition(0, -44, 0);
+        }, 30, '#ffffff', 22).setPosition(0, -110, 0);
 
-        createButton('btn_home', card, 'HOME', 330, 76, '#0ea5e9', () => {
+        createButton('btn_home', card, 'HOME', 360, 74, '#0ea5e9', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             if (this._pauseNode) this._pauseNode.active = false;
             this._actions?.onBackMenu();
-        }, 30, '#ffffff', 22).setPosition(0, -150, 0);
+        }, 30, '#ffffff', 22).setPosition(0, -202, 0);
 
         this._pauseNode.active = false;
     }
@@ -783,28 +930,152 @@ export class UIManager extends Component {
 
     private buildSettingsPopup(): void {
         this._settingsNode = createPanel('GbzSettingLayer', this.node, 750, 1334, '#000000', 170, 0, true);
-        const card = this.makeSpriteNode('panel', this._settingsNode, 'UI_db2', 520, 380);
+        const card = this.makeSpriteNode('panel', this._settingsNode, 'UI_db2', 540, 560);
 
         const closeBtn = this.makeSpriteFit('btn_close', card, 'btn_close', 58, 58);
-        closeBtn.setPosition(220, 150, 0);
+        closeBtn.setPosition(226, 236, 0);
         this.bindTap(closeBtn, () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             if (this._settingsNode) this._settingsNode.active = false;
         });
 
-        createLabel('title', card, 'SETTINGS', 40, '#1e293b', 300, 52).node.setPosition(0, 118, 0);
+        createLabel('title', card, 'SETTINGS', 40, '#1e293b', 300, 52).node.setPosition(0, 206, 0);
 
-        const soundBtn = createButton('btn_sound', card, 'SOUND FX: ON', 360, 76, '#0ea5e9', () => {
+        const soundBtn = createButton('btn_sound', card, 'SOUND FX: ON', 380, 74, '#0ea5e9', () => {
             DataManager.ins.soundEnabled = !DataManager.ins.soundEnabled;
             DataManager.ins.save();
             this.refreshSettingsLabels();
             if (DataManager.ins.soundEnabled) AudioManager.ins.play(AudioClips.GAME_CLICK);
-        }, 28, '#ffffff', 22);
-        soundBtn.setPosition(0, -16, 0);
+        }, 26, '#ffffff', 22);
+        soundBtn.setPosition(0, 96, 0);
         this._soundBtnNode = soundBtn;
         this._soundBtnLbl = soundBtn.getComponentInChildren(Label);
 
+        const vibeBtn = createButton('btn_vibe', card, 'HAPTICS: ON', 380, 74, '#10b981', () => {
+            DataManager.ins.vibrateEnabled = !DataManager.ins.vibrateEnabled;
+            DataManager.ins.save();
+            this.refreshSettingsLabels();
+            if (DataManager.ins.vibrateEnabled) MonetizationManager.ins.triggerHaptic('medium');
+        }, 26, '#ffffff', 22);
+        vibeBtn.setPosition(0, 0, 0);
+        this._vibeBtnNode = vibeBtn;
+        this._vibeBtnLbl = vibeBtn.getComponentInChildren(Label);
+
+        createButton('btn_privacy', card, 'AD PRIVACY & POLICY', 380, 68, '#64748b', () => {
+            AudioManager.ins.play(AudioClips.GAME_CLICK);
+            MonetizationManager.ins.showPrivacyOptions();
+        }, 23, '#ffffff', 20).setPosition(0, -96, 0);
+
+        createLabel(
+            'ver_lbl',
+            card,
+            `Screw Out: Sweet Jam  v${MonetizationManager.APP_VERSION}`,
+            20,
+            '#94a3b8',
+            440,
+            30,
+        ).node.setPosition(0, -196, 0);
+
         this._settingsNode.active = false;
+    }
+
+    private buildThemeModal(): void {
+        this._themeNode = createPanel('ThemeShopLayer', this.node, 750, 1334, '#000000', 180, 0, true);
+        const card = this.makeSpriteNode('panel', this._themeNode, 'UI_db2', 640, 820);
+
+        const closeBtn = this.makeSpriteFit('btn_close', card, 'btn_close', 58, 58);
+        closeBtn.setPosition(274, 366, 0);
+        this.bindTap(closeBtn, () => {
+            AudioManager.ins.play(AudioClips.GAME_CLICK);
+            if (this._themeNode) this._themeNode.active = false;
+        });
+
+        createLabel('title', card, 'THEMES & SKINS', 38, '#0f172a', 420, 48).node.setPosition(0, 344, 0);
+        createLabel('sub', card, 'Switch visual styles anytime for maximum comfort!', 20, '#64748b', 520, 32)
+            .node.setPosition(0, 294, 0);
+
+        this._themeListRoot = new Node('theme_list');
+        this._themeListRoot.setParent(card);
+        this._themeListRoot.setPosition(0, -28, 0);
+
+        this._themeNode.active = false;
+    }
+
+    private refreshThemeModal(): void {
+        if (!this._themeListRoot) return;
+        this._themeListRoot.removeAllChildren();
+
+        const themes = ThemeManager.ins.getAllThemes();
+        const activeId = ThemeManager.ins.activeId;
+
+        themes.forEach((t, idx) => {
+            const y = 200 - idx * 204;
+            const isActive = t.id === activeId;
+            const unlocked = ThemeManager.ins.isUnlocked(t.id);
+
+            const row = createPanel(
+                `theme_${t.id}`,
+                this._themeListRoot!,
+                560,
+                180,
+                isActive ? '#fef3c7' : '#f8fafc',
+                255,
+                24,
+            );
+            row.setPosition(0, y, 0);
+
+            // Crisp active border stroke
+            const rowG = row.getComponent(Graphics);
+            if (rowG) {
+                rowG.strokeColor = new Color().fromHEX(isActive ? '#f59e0b' : '#e2e8f0');
+                rowG.lineWidth = isActive ? 5 : 2;
+                rowG.roundRect(-280, -90, 560, 180, 24);
+                rowG.stroke();
+            }
+
+            // Unified left axis (x = -246) for swatches, title, and subtitle!
+            t.swatchColors.forEach((hex, si) => {
+                const sw = createPanel(`sw_${si}`, row, 40, 40, hex, 255, 20);
+                sw.setPosition(-226 + si * 34, 42, 0);
+            });
+
+            const titleLbl = createLabel('name', row, t.name, 28, '#0f172a', 340, 36);
+            titleLbl.isBold = true;
+            titleLbl.horizontalAlign = Label.HorizontalAlign.LEFT;
+            titleLbl.node.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
+            titleLbl.node.setPosition(-246, -8, 0);
+
+            const subLbl = createLabel('desc', row, t.subtitle, 18, '#64748b', 340, 28);
+            subLbl.horizontalAlign = Label.HorizontalAlign.LEFT;
+            subLbl.node.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
+            subLbl.node.setPosition(-246, -46, 0);
+
+            if (isActive) {
+                const badge = createPanel('active_badge', row, 152, 62, '#22c55e', 255, 20);
+                badge.setPosition(184, 0, 0);
+                const lbl = createLabel('lbl', badge, 'ACTIVE', 24, '#ffffff', 140, 32);
+                lbl.isBold = true;
+            } else if (unlocked) {
+                createButton('btn_equip', row, 'EQUIP', 152, 64, '#0ea5e9', () => {
+                    AudioManager.ins.play(AudioClips.GAME_CLICK);
+                    ThemeManager.ins.setTheme(t.id);
+                    this.refreshThemeModal();
+                    this.showToast(`Equipped ${t.name}!`);
+                }, 24, '#ffffff', 20).setPosition(184, 0, 0);
+            } else {
+                createButton('btn_unlock', row, 'FREE (AD)', 158, 62, '#ec4899', () => {
+                    AudioManager.ins.play(AudioClips.GAME_CLICK);
+                    MonetizationManager.ins.showRewardedAd('unlock_theme', () => {
+                        ThemeManager.ins.unlockTheme(t.id);
+                        ThemeManager.ins.setTheme(t.id);
+                        this.refreshThemeModal();
+                        this.showToast(`Unlocked ${t.name}!`);
+                    });
+                }, 22, '#ffffff', 20).setPosition(184, 14, 0);
+                createLabel('lv_hint', row, `or reach Lv.${t.unlockLevel}`, 16, '#94a3b8', 160, 24)
+                    .node.setPosition(184, -38, 0);
+            }
+        });
     }
 
     private buildGalleryModal(): void {
@@ -886,9 +1157,15 @@ export class UIManager extends Component {
                 const barTrack = this.makeSpriteNode('p_track', tile, 'UI_jdt_1', 152, 22);
                 barTrack.setPosition(0, -58, 0);
                 const barFill = this.makeSpriteNode('p_fill', barTrack, 'UI_jdt_2', 152, 22);
-                barFill.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
-                barFill.setPosition(-76, 0, 0);
-                barFill.setScale(Math.max(0.06, Math.min(1, filled / Math.max(1, total))), 1, 1);
+                const bfSp = barFill.getComponent(Sprite);
+                const ratio = Math.max(0, Math.min(1, filled / Math.max(1, total)));
+                barFill.active = ratio > 0.001;
+                if (bfSp) {
+                    bfSp.type = Sprite.Type.FILLED;
+                    bfSp.fillType = Sprite.FillType.HORIZONTAL;
+                    bfSp.fillStart = 0;
+                    bfSp.fillRange = Math.max(0.08, ratio);
+                }
                 const pLbl = createLabel('p_lbl', barTrack, `${pct}%`, 15, '#ffffff', 120, 20);
                 pLbl.isBold = true;
             } else {
@@ -957,9 +1234,77 @@ export class UIManager extends Component {
         if (this._settingsNode) this._settingsNode.active = true;
     }
 
+    public openPause(): void {
+        if (this._pauseLevelLbl) {
+            this._pauseLevelLbl.string = `LEVEL ${DataManager.ins.level}`;
+        }
+        this.refreshSettingsLabels();
+        if (this._pauseNode) this._pauseNode.active = true;
+    }
+
     public openGallery(): void {
         this.refreshGalleryModal();
         if (this._galleryNode) this._galleryNode.active = true;
+    }
+
+    public openThemes(): void {
+        this.refreshThemeModal();
+        if (this._themeNode) this._themeNode.active = true;
+    }
+
+    public refreshThemeVisuals(): void {
+        const bgSf = ThemeManager.ins.getMenuBgSprite();
+        if (this._menuBgSprite && bgSf) {
+            this._menuBgSprite.spriteFrame = bgSf;
+        }
+        if (this._paintBgSprite && bgSf) {
+            this._paintBgSprite.spriteFrame = bgSf;
+        }
+        this.refreshMenuLogo();
+    }
+
+    private refreshMenuLogo(): void {
+        if (!this._menuLogoNode) return;
+        const sp = this._menuLogoNode.getComponent(Sprite);
+        const ui = this._menuLogoNode.getComponent(UITransform);
+        const sf = ThemeManager.ins.getLogoSprite();
+        if (sp && sf) {
+            sp.spriteFrame = sf;
+            if (ui && sf.originalSize.width > 0 && sf.originalSize.height > 0) {
+                const maxW = ThemeManager.ins.activeId === 'dessert' ? 490 : 460;
+                const maxH = ThemeManager.ins.activeId === 'dessert' ? 168 : 112;
+                const sc = Math.min(maxW / sf.originalSize.width, maxH / sf.originalSize.height);
+                ui.setContentSize(Math.round(sf.originalSize.width * sc), Math.round(sf.originalSize.height * sc));
+            }
+        }
+    }
+
+    public applySafeArea(topInset: number, bottomInset: number): void {
+        const top = Math.max(0, Math.min(72, Math.round(topInset)));
+        const bot = Math.max(0, Math.min(54, Math.round(bottomInset)));
+
+        const bumpTop = (node: Node | null, base: number) => {
+            const w = node?.getComponent(Widget);
+            if (w) {
+                w.top = base + top;
+                w.updateAlignment();
+            }
+        };
+        const bumpBot = (node: Node | null, base: number) => {
+            const w = node?.getComponent(Widget);
+            if (w) {
+                w.bottom = base + bot;
+                w.updateAlignment();
+            }
+        };
+
+        bumpTop(this._pauseBtnNode, 22);
+        bumpTop(this._lvPillNode, 34);
+        bumpTop(this._boxProgNode, 365);
+        bumpTop(this._menuSetBtn, 26);
+        bumpTop(this._menuThemeBtn, 34);
+        bumpBot(this._skillBarNode, 26);
+        bumpBot(this._menuBottomRow, 96);
     }
 
     public hidePopups(): void {
@@ -969,6 +1314,7 @@ export class UIManager extends Component {
         if (this._paintNode) this._paintNode.active = false;
         if (this._loseNode) this._loseNode.active = false;
         if (this._settingsNode) this._settingsNode.active = false;
+        if (this._themeNode) this._themeNode.active = false;
         if (this._galleryNode) this._galleryNode.active = false;
     }
 
@@ -992,7 +1338,7 @@ export class UIManager extends Component {
                 const sf = ResManager.ins.getUiSprite(cnt > 0 ? 'badge_count' : 'badge_ad');
                 if (sf) sp.spriteFrame = sf;
                 const ui = sp.node.getComponent(UITransform);
-                if (ui) ui.setContentSize(cnt > 0 ? 76 : 94, cnt > 0 ? 76 : 68);
+                if (ui) ui.setContentSize(cnt > 0 ? 72 : 88, cnt > 0 ? 72 : 62);
             }
         }
 
@@ -1029,7 +1375,40 @@ export class UIManager extends Component {
             if (g) {
                 g.clear();
                 g.fillColor = new Color().fromHEX(on ? '#0ea5e9' : '#94a3b8');
-                g.roundRect(-180, -38, 360, 76, 22);
+                g.roundRect(-190, -37, 380, 74, 22);
+                g.fill();
+            }
+        }
+        const vibeOn = DataManager.ins.vibrateEnabled;
+        if (this._vibeBtnLbl) {
+            this._vibeBtnLbl.string = `HAPTICS: ${vibeOn ? 'ON' : 'OFF'}`;
+        }
+        if (this._vibeBtnNode) {
+            const g = this._vibeBtnNode.getComponent(Graphics);
+            if (g) {
+                g.clear();
+                g.fillColor = new Color().fromHEX(vibeOn ? '#10b981' : '#94a3b8');
+                g.roundRect(-190, -37, 380, 74, 22);
+                g.fill();
+            }
+        }
+        if (this._pauseSoundLbl) this._pauseSoundLbl.string = `SFX: ${on ? 'ON' : 'OFF'}`;
+        if (this._pauseSoundNode) {
+            const g = this._pauseSoundNode.getComponent(Graphics);
+            if (g) {
+                g.clear();
+                g.fillColor = new Color().fromHEX(on ? '#0ea5e9' : '#94a3b8');
+                g.roundRect(-90, -28, 180, 56, 18);
+                g.fill();
+            }
+        }
+        if (this._pauseVibeLbl) this._pauseVibeLbl.string = `HAPTIC: ${vibeOn ? 'ON' : 'OFF'}`;
+        if (this._pauseVibeNode) {
+            const g = this._pauseVibeNode.getComponent(Graphics);
+            if (g) {
+                g.clear();
+                g.fillColor = new Color().fromHEX(vibeOn ? '#10b981' : '#94a3b8');
+                g.roundRect(-90, -28, 180, 56, 18);
                 g.fill();
             }
         }

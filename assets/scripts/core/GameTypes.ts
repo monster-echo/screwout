@@ -33,6 +33,20 @@ export const AudioClips = {
 
 export type AudioClipKey = typeof AudioClips[keyof typeof AudioClips];
 
+export type ThemeId = 'dessert' | 'acrylic' | 'nordic';
+
+export interface ThemeConfig {
+    id: ThemeId;
+    name: string;
+    subtitle: string;
+    unlockLevel: number;
+    boardPalette: string[];
+    frameTintHex: string;
+    swatchColors: [string, string, string];
+    useGummyBounce: boolean;
+    useCrumbParticles: boolean;
+}
+
 /** Original 9-color pastel palette for stacked glass/acrylic boards */
 export const BOARD_PALETTE: string[] = [
     '#91f99e',
@@ -44,6 +58,32 @@ export const BOARD_PALETTE: string[] = [
     '#ff8080',
     '#ffb777',
     '#ffe775',
+];
+
+/** Sweet Dessert luxury macaron & candy-glaze palette (high clarity + appetizing tones) */
+export const DESSERT_BOARD_PALETTE: string[] = [
+    '#ff8fb8', // Rose macaron
+    '#ffe066', // Honey lemon glaze
+    '#7ce8b8', // Pistachio mint
+    '#78d2ff', // Sky frost blue
+    '#c49bff', // Lavender taro cream
+    '#ffa870', // Apricot peach glaze
+    '#ff7a8a', // Berry sorbet
+    '#b5eb86', // Matcha lime cream
+    '#9bb8ff', // Periwinkle frost
+];
+
+/** Minimalist Nordic Morandi matte palette (ultra-clean low-fatigue clarity) */
+export const NORDIC_BOARD_PALETTE: string[] = [
+    '#a3c4bc',
+    '#d8c3a5',
+    '#9fb8d4',
+    '#c9ada7',
+    '#b5c99a',
+    '#e2c290',
+    '#b8b8d1',
+    '#d4a373',
+    '#98c1d9',
 ];
 
 /** Fallback tint colors for screw/box color IDs 1..10 */
