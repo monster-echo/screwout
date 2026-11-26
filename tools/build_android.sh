@@ -134,6 +134,13 @@ echo "== patch gradle.properties / manifest"
 set_prop PROP_TARGET_SDK_VERSION "$TARGET_SDK"
 set_prop PROP_MIN_SDK_VERSION "$MIN_SDK"
 set_prop PROP_APP_ABI "$APP_ABI"
+# AGP's maven-bundled aapt2 can choke on android.jar's resource table
+# ("RES_TABLE_TYPE_TYPE entry offsets overlap"); force the build-tools one.
+AAPT2_OVERRIDE="$(find "$ANDROID_SDK/build-tools" -name aapt2 -type f | sort -V | tail -1)"
+if [[ -n "$AAPT2_OVERRIDE" ]]; then
+	set_prop android.aapt2FromMavenOverride "$AAPT2_OVERRIDE"
+	echo "aapt2 override: $AAPT2_OVERRIDE"
+fi
 
 if [[ "$STAGE" == "release" ]]; then
 	if [[ -z "${KEYSTORE:-}" || -z "${KEYSTORE_PASS:-}" || -z "${KEYSTORE_USER:-}" ]]; then

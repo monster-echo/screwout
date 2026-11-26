@@ -49,6 +49,9 @@ IOS_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-15.0}"
 # New clang (Xcode 26+) hard-errors on patterns Cocos 3.8.6's vendored
 # headers still use. Downgrade those diagnostics; real breakage still fails.
 IOS_EXTRA_CXXFLAGS='$(inherited) -Wno-error=invalid-specialization -Wno-error=enum-constexpr-conversion -Wno-error=deprecated-declarations -Wno-error=deprecated-non-prototype'
+# GoogleMobileAds is Swift-built but statically linked into an ObjC-only app:
+# the linker needs the Swift static compatibility libs explicitly on the path.
+IOS_EXTRA_LDFLAGS='$(inherited) -L$(TOOLCHAIN_DIR)/usr/lib/swift/static -lswiftCompatibility51 -lswiftCompatibility56 -lswiftCompatibilityConcurrency'
 
 eval "$(python3 "$ROOT/tools/set_versions.py" get)"
 VERSION="${VERSION:-$version}"
@@ -235,6 +238,7 @@ if [[ "$STAGE" == "sim" ]]; then
 		-sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
 		IPHONEOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET"
 		OTHER_CPLUSPLUSFLAGS="$IOS_EXTRA_CXXFLAGS"
+		OTHER_LDFLAGS="$IOS_EXTRA_LDFLAGS"
 		ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES=YES
 		CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
 		PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
