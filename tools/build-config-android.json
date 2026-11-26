@@ -15,7 +15,7 @@
   "packages": {
     "android": {
       "packageName": "tech.zhongbei.screwout",
-      "apiLevel": 35,
+      "apiLevel": 36,
       "appABIs": [
         "arm64-v8a",
         "armeabi-v7a"

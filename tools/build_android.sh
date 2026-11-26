@@ -25,7 +25,7 @@ if [[ -f "$ROOT/release.env" ]]; then
 	source "$ROOT/release.env"
 fi
 STAGE="${STAGE:-release}"
-TARGET_SDK="${TARGET_SDK:-35}"
+TARGET_SDK="${TARGET_SDK:-36}"
 MIN_SDK="${MIN_SDK:-24}"
 APP_ABI="${APP_ABI:-arm64-v8a}"
 APP_NAME="${APP_NAME:-screwout}"
@@ -134,12 +134,20 @@ echo "== patch gradle.properties / manifest"
 set_prop PROP_TARGET_SDK_VERSION "$TARGET_SDK"
 set_prop PROP_MIN_SDK_VERSION "$MIN_SDK"
 set_prop PROP_APP_ABI "$APP_ABI"
-# AGP's maven-bundled aapt2 can choke on android.jar's resource table
-# ("RES_TABLE_TYPE_TYPE entry offsets overlap"); force the build-tools one.
-AAPT2_OVERRIDE="$(find "$ANDROID_SDK/build-tools" -name aapt2 -type f | sort -V | tail -1)"
-if [[ -n "$AAPT2_OVERRIDE" ]]; then
-	set_prop android.aapt2FromMavenOverride "$AAPT2_OVERRIDE"
-	echo "aapt2 override: $AAPT2_OVERRIDE"
+# The engine template pins AGP 8.0.2, whose bundled aapt2 cannot parse the
+# resource tables of android.jar from SDK 35+ ("RES_TABLE_TYPE_TYPE entry
+# offsets overlap"); AGP 8.13.0 also supports compileSdk 36, which Play
+# requires of new apps since 2026-08.
+sed -i.bak "s/classpath 'com.android.tools.build:gradle:8.0.2'/classpath 'com.android.tools.build:gradle:8.13.0'/" \
+	"$PROJ_DIR/build.gradle" && rm -f "$PROJ_DIR/build.gradle.bak"
+echo "AGP: 8.13.0"
+
+# Cocos template pins Gradle 8.0.2; AGP 8.13 needs Gradle 8.13.
+if [[ -f "$PROJ_DIR/gradle/wrapper/gradle-wrapper.properties" ]]; then
+	sed -i.bak 's|gradle-8\.0\.2-bin.zip|gradle-8.13-bin.zip|' \
+		"$PROJ_DIR/gradle/wrapper/gradle-wrapper.properties" \
+		&& rm -f "$PROJ_DIR/gradle/wrapper/gradle-wrapper.properties.bak"
+	echo "Gradle wrapper: 8.13"
 fi
 
 if [[ "$STAGE" == "release" ]]; then
@@ -242,6 +250,20 @@ if grep -q 'android:screenOrientation=' "$MAIN_MANIFEST"; then
 else
 	sed -i.bak "s|android:label=\"[^\"]*\"|&\n            android:screenOrientation=\"portrait\"|" "$MAIN_MANIFEST" \
 		&& rm -f "$MAIN_MANIFEST.bak" && echo "manifest: portrait attribute added"
+fi
+
+# 7. The engine's :libcocos2dx manifest injects com.android.vending.BILLING on
+#    every build; this app has no in-app products, so force-remove the
+#    permission with tools:node="remove" (merged last, wins over the engine).
+if ! grep -q 'xmlns:tools=' "$MAIN_MANIFEST"; then
+	sed -i.bak 's|<manifest |<manifest xmlns:tools="http://schemas.android.com/tools" |' \
+		"$MAIN_MANIFEST" && rm -f "$MAIN_MANIFEST.bak"
+fi
+if ! grep -q 'com.android.vending.BILLING" tools:node="remove"' "$MAIN_MANIFEST"; then
+	sed -i.bak '/com.android.vending.BILLING/d' "$MAIN_MANIFEST" && rm -f "$MAIN_MANIFEST.bak"
+	sed -i.bak 's|<application|    <uses-permission android:name="com.android.vending.BILLING" tools:node="remove" />\n    <application|' \
+		"$MAIN_MANIFEST" && rm -f "$MAIN_MANIFEST.bak"
+	echo "manifest: BILLING force-removed (tools:node=remove)"
 fi
 
 GRADLE="$PROJ_DIR/gradlew"
