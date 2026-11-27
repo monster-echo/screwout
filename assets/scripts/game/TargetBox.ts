@@ -31,15 +31,15 @@ export class TargetBox extends Component {
         this._bodySprite = this.node.getComponent(Sprite) || this.node.addComponent(Sprite);
         this._bodySprite.sizeMode = Sprite.SizeMode.CUSTOM;
 
-        // 3 screw slots inside the box (triangle layout matching gbz_box1..10 holes)
+        // 3 screw slots inside the macaron pastry box (centered cleanly inside piped vanilla cream rim)
         this._screwsRoot = new Node('screws');
         this._screwsRoot.setParent(this.node);
         this._screwsRoot.setPosition(0, 0, 0);
         this.screwList = [];
         const slotPositions: [number, number][] = [
             [0, 14],
-            [-35, -34],
-            [35, -34],
+            [-27, -34],
+            [27, -34],
         ];
         for (let i = 0; i < this.screwNumMax; i++) {
             const sNode = new Node(`slot_${i}`);
@@ -53,12 +53,12 @@ export class TargetBox extends Component {
             this.screwList.push(sNode);
         }
 
-        // Cover lid (original gbz_cover is 260x282 -> 156x169 at box width 156)
+        // Ribbon-topped frosted macaron cover lid (full 156x204 matching open pastry box)
         this._coverNode = new Node('cover');
         this._coverNode.setParent(this.node);
-        this._coverNode.setPosition(0, 22, 0);
+        this._coverNode.setPosition(0, 0, 0);
         const cUi = this._coverNode.addComponent(UITransform);
-        cUi.setContentSize(156, 169);
+        cUi.setContentSize(156, 204);
         this._coverSprite = this._coverNode.addComponent(Sprite);
         this._coverSprite.sizeMode = Sprite.SizeMode.CUSTOM;
         this._coverNode.active = false;
@@ -206,7 +206,7 @@ export class TargetBox extends Component {
         const startPos = this.node.position.clone();
 
         tween(cover)
-            .to(0.15, { position: new Vec3(0, 22, 0) })
+            .to(0.15, { position: new Vec3(0, 0, 0) })
             .call(() => {
                 tween(this.node)
                     .to(0.08, { scale: new Vec3(sx * 1.2, sy * 0.7, 1) })

@@ -11,7 +11,6 @@ import {
     PhysicsSystem2D,
     PolygonCollider2D,
     RigidBody2D,
-    sp,
     Sprite,
     tween,
     UIOpacity,
@@ -22,7 +21,6 @@ import {
 } from 'cc';
 import {
     AudioClips,
-    BOARD_PALETTE,
     BoardData,
     DifficultyConfig,
     GameStatus,
@@ -524,7 +522,7 @@ export class LevelController extends Component {
             frameSp.spriteFrame = frameSf;
         }
 
-        // Inner colored glass board child
+        // Inner frosted sugar icing child
         const innerNode = new Node('board');
         innerNode.setParent(bNode);
         innerNode.setPosition(bData.boardPos[0], bData.boardPos[1], 0);
@@ -532,7 +530,7 @@ export class LevelController extends Component {
         const inUi = innerNode.addComponent(UITransform);
         inUi.setContentSize(bData.boardSize[0], bData.boardSize[1]);
         const inOp = innerNode.addComponent(UIOpacity);
-        inOp.opacity = isTopVisible ? 210 : 70;
+        inOp.opacity = isTopVisible ? 250 : 120;
 
         const innerSp = innerNode.addComponent(Sprite);
         innerSp.sizeMode = Sprite.SizeMode.CUSTOM;
@@ -549,6 +547,11 @@ export class LevelController extends Component {
             }
             g.close();
             g.fill();
+        }
+
+        // Colorful rainbow candy sprinkles scattered strictly inside the cookie frosting (avoiding edges & holes!)
+        if (bData.polygon.length >= 3) {
+            this.addCookieSprinkles(bNode, innerNode, bData, layerIndex);
         }
 
         // Holes container
@@ -619,15 +622,130 @@ export class LevelController extends Component {
             innerSp.grayscale = false;
             boardComp.notActive = false;
         } else {
-            // Soft frosted pearl-lavender veil for deeper layers (replaces muddy dark grey!)
+            // Soft warm toasted-cream veil for deeper stacked cookies (clean depth separation!)
             frameSp.grayscale = false;
             innerSp.grayscale = false;
-            frameSp.color = new Color(242, 240, 246, 215);
-            innerSp.color = new Color(214, 212, 224, 185);
+            frameSp.color = new Color(218, 186, 174, 200);
+            innerSp.color = new Color(236, 218, 214, 175);
             boardComp.notActive = true;
         }
 
         return bNode;
+    }
+
+    /**
+     * Scatters crisp, un-tinted glossy rainbow candy sprinkles inside each cookie's icing polygon,
+     * staying well clear of outer biscuit rims and all screw holes.
+     */
+    private addCookieSprinkles(bNode: Node, innerNode: Node, bData: BoardData, layerIndex: number): void {
+        const poly = bData.polygon.map((p) => new Vec2(p[0], p[1]));
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const p of poly) {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        }
+        const spanX = maxX - minX;
+        const spanY = maxY - minY;
+        if (spanX < 40 || spanY < 40) return;
+
+        // Deterministic PRNG seeded by board name + layerIndex so sprinkles never jitter across reloads
+        let seed = 1337 + layerIndex * 97;
+        for (let i = 0; i < bData.name.length; i++) {
+            seed = (seed * 31 + bData.name.charCodeAt(i)) | 0;
+        }
+        const rand = (): number => {
+            seed = (seed * 1664525 + 1013904223) | 0;
+            return ((seed >>> 0) % 10000) / 10000;
+        };
+
+        const spNode = new Node('sprinkles');
+        spNode.setParent(innerNode);
+        spNode.setPosition(-bData.boardPos[0], -bData.boardPos[1], 0);
+        spNode.angle = -(bData.boardAngle || 0);
+        const g = spNode.addComponent(Graphics);
+
+        const sprinklePalette = [
+            '#ff5c8a', // Strawberry pink
+            '#ffd43b', // Sunny lemon
+            '#2dd4bf', // Mint teal
+            '#60a5fa', // Sky blue
+            '#c084fc', // Lavender
+            '#fb923c', // Peach orange
+            '#ffffff', // Sugar white
+        ];
+
+        const areaApprox = spanX * spanY;
+        const targetCount = Math.max(5, Math.min(14, Math.round(areaApprox / 5200)));
+        const placed: [number, number][] = [];
+        const margin = 20;
+
+        for (let attempt = 0; attempt < targetCount * 8 && placed.length < targetCount; attempt++) {
+            const x = minX + margin + rand() * Math.max(1, spanX - margin * 2);
+            const y = minY + margin + rand() * Math.max(1, spanY - margin * 2);
+            // Must be safely inside polygon (check center + 4 inset neighbors)
+            if (
+                !Intersection2D.pointInPolygon(new Vec2(x, y), poly) ||
+                !Intersection2D.pointInPolygon(new Vec2(x + 15, y), poly) ||
+                !Intersection2D.pointInPolygon(new Vec2(x - 15, y), poly) ||
+                !Intersection2D.pointInPolygon(new Vec2(x, y + 15), poly) ||
+                !Intersection2D.pointInPolygon(new Vec2(x, y - 15), poly)
+            ) {
+                continue;
+            }
+            // Keep clear of every screw hole
+            let nearHole = false;
+            for (const h of bData.holes) {
+                const dx = x - h[0];
+                const dy = y - h[1];
+                if (dx * dx + dy * dy < 40 * 40) {
+                    nearHole = true;
+                    break;
+                }
+            }
+            if (nearHole) continue;
+            // Keep sprinkles evenly spaced
+            let tooClose = false;
+            for (const pl of placed) {
+                const dx = x - pl[0];
+                const dy = y - pl[1];
+                if (dx * dx + dy * dy < 32 * 32) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            if (tooClose) continue;
+
+            placed.push([x, y]);
+            const ang = rand() * Math.PI;
+            const halfLen = 5.5 + rand() * 3.0;
+            const dx = Math.cos(ang) * halfLen;
+            const dy = Math.sin(ang) * halfLen;
+            const colHex = sprinklePalette[placed.length % sprinklePalette.length];
+
+            // Soft drop shadow under each sprinkle
+            g.lineCap = Graphics.LineCap.ROUND;
+            g.lineWidth = 6.2;
+            g.strokeColor = new Color(150, 92, 108, 65);
+            g.moveTo(x - dx, y - dy - 1.8);
+            g.lineTo(x + dx, y + dy - 1.8);
+            g.stroke();
+
+            // Plump glossy colored sugar sprinkle capsule
+            g.lineWidth = 5.6;
+            g.strokeColor = new Color().fromHEX(colHex);
+            g.moveTo(x - dx, y - dy);
+            g.lineTo(x + dx, y + dy);
+            g.stroke();
+
+            // Crisp glossy white specular dot along upper edge
+            g.lineWidth = 2.0;
+            g.strokeColor = new Color(255, 255, 255, 165);
+            g.moveTo(x - dx * 0.45, y - dy * 0.45 + 1.0);
+            g.lineTo(x + dx * 0.35, y + dy * 0.35 + 1.0);
+            g.stroke();
+        }
     }
 
     private addBoardScrews(
@@ -1242,7 +1360,7 @@ export class LevelController extends Component {
                     innerSp.grayscale = false;
                     innerSp.color = new Color().fromHEX(this._allColors[bComp.rootBoardsIndex % this._allColors.length]);
                 }
-                if (innerOp) tween(innerOp).to(0.4, { opacity: 210 }).start();
+                if (innerOp) tween(innerOp).to(0.4, { opacity: 250 }).start();
                 if (holesOp) tween(holesOp).to(0.4, { opacity: 255 }).start();
                 if (objOp) tween(objOp).to(0.4, { opacity: 255 }).start();
             }
@@ -1269,11 +1387,11 @@ export class LevelController extends Component {
         mover.setParent(this._fxLayer);
         mover.setPosition(startLocal);
 
-        // 1. 3D metallic threaded shaft emerging underneath the screw head
+        // 1. 3D glossy gummy-candy threaded shaft tinted to match this screw's candy color!
         const shaftNode = new Node('shaft');
         shaftNode.setParent(mover);
         const shUi = shaftNode.addComponent(UITransform);
-        shUi.setContentSize(24, 52);
+        shUi.setContentSize(26, 54);
         shUi.setAnchorPoint(0.5, 1.0);
         shaftNode.setPosition(0, 4, 0);
         shaftNode.setScale(1, 0.05, 1);
@@ -1281,8 +1399,9 @@ export class LevelController extends Component {
         shSp.sizeMode = Sprite.SizeMode.CUSTOM;
         const shaftSf = ResManager.ins.getGameSprite('screw_shaft');
         if (shaftSf) shSp.spriteFrame = shaftSf;
+        shSp.color = new Color().fromHEX(SCREW_FALLBACK_COLORS[colorId] || '#ffffff');
 
-        // 2. 3D glossy screw head cap on top of shaft
+        // 2. 3D glossy gummy-candy screw head cap on top of shaft
         const headNode = new Node('head');
         headNode.setParent(mover);
         const hUi = headNode.addComponent(UITransform);
@@ -1292,6 +1411,9 @@ export class LevelController extends Component {
         const sf = ThemeManager.ins.getScrewSprite(colorId);
         if (sf) hSp.spriteFrame = sf;
         else hSp.color = new Color().fromHEX(SCREW_FALLBACK_COLORS[colorId] || '#ffffff');
+
+        // Spawn golden 4-point sparkles popping around the unscrewed cookie hole!
+        this.spawnCandySparkles(startLocal);
 
         MonetizationManager.ins.triggerHaptic('light');
         if (ThemeManager.ins.activeConfig.useGummyBounce) {
@@ -1422,20 +1544,35 @@ export class LevelController extends Component {
     }
 
     private showTouchEffect(worldPos: Vec3): void {
-        if (!this._fxLayer || !ResManager.ins.touchSpine) return;
-        const fxUi = this._fxLayer.getComponent(UITransform)!;
+        if (!this._fxLayer) return;
+        const fxUi = this._fxLayer.getComponent(UITransform);
+        if (!fxUi) return;
         const local = fxUi.convertToNodeSpaceAR(worldPos);
-        const fx = new Node('touch_fx');
-        fx.setParent(this._fxLayer);
-        fx.setPosition(local);
-        const sk = fx.addComponent(sp.Skeleton);
-        sk.premultipliedAlpha = false;
-        sk.skeletonData = ResManager.ins.touchSpine;
-        sk.setSkin('default');
-        sk.setAnimation(0, 'touch', false);
-        this.scheduleOnce(() => {
-            if (fx.isValid) fx.destroy();
-        }, 0.8);
+
+        // Native-safe Sweet Candy sparkle ring + burst (avoids Cocos 3.8.6 native Spine RenderEntity nullptr crash)
+        const ring = new Node('touch_ring');
+        ring.setParent(this._fxLayer);
+        ring.setPosition(local);
+        ring.setScale(0.35, 0.35, 1);
+        const rg = ring.addComponent(Graphics);
+        rg.strokeColor = new Color(255, 224, 102, 240);
+        rg.lineWidth = 6;
+        rg.circle(0, 0, 34);
+        rg.stroke();
+        rg.strokeColor = new Color(255, 140, 196, 200);
+        rg.lineWidth = 3;
+        rg.circle(0, 0, 26);
+        rg.stroke();
+        const rop = ring.addComponent(UIOpacity);
+        rop.opacity = 245;
+
+        tween(ring)
+            .to(0.26, { scale: new Vec3(1.55, 1.55, 1) }, { easing: 'quadOut' })
+            .call(() => {
+                if (ring.isValid) ring.destroy();
+            })
+            .start();
+        tween(rop).to(0.26, { opacity: 0 }, { easing: 'quadIn' }).start();
     }
 
     // ==================== Skills & Revive ====================
@@ -1877,6 +2014,48 @@ export class LevelController extends Component {
             }
         }
         this._trayComp?.refreshTheme();
+    }
+
+    /** Golden 4-point candy star sparkles popping from the cookie hole on unscrew! */
+    private spawnCandySparkles(localPos: Vec3): void {
+        if (!this._fxLayer) return;
+        const offsets: [number, number, number][] = [
+            [-28, 22, 13], [30, 26, 11], [-18, 44, 9], [22, -16, 10],
+        ];
+        for (let i = 0; i < offsets.length; i++) {
+            const [ox, oy, r] = offsets[i];
+            const sp = new Node(`sparkle_${i}`);
+            sp.setParent(this._fxLayer);
+            sp.setPosition(localPos.x + ox * 0.4, localPos.y + oy * 0.4, 0);
+            sp.setScale(0.2, 0.2, 1);
+            const g = sp.addComponent(Graphics);
+            g.fillColor = i % 2 === 0 ? new Color(255, 246, 168, 255) : new Color(255, 255, 255, 255);
+            g.moveTo(0, r);
+            g.lineTo(r * 0.28, r * 0.28);
+            g.lineTo(r, 0);
+            g.lineTo(r * 0.28, -r * 0.28);
+            g.lineTo(0, -r);
+            g.lineTo(-r * 0.28, -r * 0.28);
+            g.lineTo(-r, 0);
+            g.lineTo(-r * 0.28, r * 0.28);
+            g.close();
+            g.fill();
+            const op = sp.addComponent(UIOpacity);
+            op.opacity = 255;
+
+            tween(sp)
+                .to(0.16, {
+                    position: new Vec3(localPos.x + ox, localPos.y + oy + 18, 0),
+                    scale: new Vec3(1.15, 1.15, 1),
+                    angle: 45,
+                }, { easing: 'quadOut' })
+                .to(0.22, { scale: new Vec3(0.1, 0.1, 1), angle: 90 }, { easing: 'quadIn' })
+                .call(() => {
+                    if (sp.isValid) sp.destroy();
+                })
+                .start();
+            tween(op).delay(0.16).to(0.22, { opacity: 0 }).start();
+        }
     }
 
     /** Sweet Dessert ASMR burst: golden biscuit crumbs & pastel sugar sprinkles when a cookie board drops. */

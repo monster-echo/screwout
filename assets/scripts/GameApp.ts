@@ -1,5 +1,5 @@
 import { _decorator, Color, Component, Graphics, Node, PhysicsSystem2D, Sprite, sys, UITransform, view, Widget } from 'cc';
-import { GameStatus, SkillType, ThemeId } from './core/GameTypes';
+import { GameStatus, SkillType } from './core/GameTypes';
 import { DataManager } from './core/DataManager';
 import { AudioManager } from './core/AudioManager';
 import { ResManager } from './core/ResManager';
@@ -125,20 +125,11 @@ export class GameApp extends Component {
         });
         this._uiMgr.applySafeArea(topInset, bottomInset);
 
-        ThemeManager.ins.onThemeChanged(() => {
-            this.applyActiveTheme();
-        });
-
         (globalThis as any).__SCREW_OUT__ = {
             ready: true,
             startLevel: (lv: number) => this.startLevel(lv),
             getBestMove: () => this._levelCtrl?.getBestLegalScrewNormalized() || null,
             getState: () => this._levelCtrl?.getDebugState() || { status: DataManager.ins.status },
-            setTheme: (id: ThemeId) => {
-                ThemeManager.ins.unlockTheme(id);
-                ThemeManager.ins.setTheme(id);
-            },
-            openThemes: () => this._uiMgr?.openThemes(),
             openGallery: () => this._uiMgr?.openGallery(),
         };
     }
@@ -159,19 +150,6 @@ export class GameApp extends Component {
             // Web browsers without notch safe area return 0
         }
         return { topInset: 0, bottomInset: 0 };
-    }
-
-    private applyActiveTheme(): void {
-        const bgSf = ThemeManager.ins.getGameBgSprite();
-        if (this._backdropSprite && bgSf) {
-            this._backdropSprite.spriteFrame = bgSf;
-        }
-        const frameSf = ThemeManager.ins.getTopFrameSprite();
-        if (this._topFrameSprite && frameSf) {
-            this._topFrameSprite.spriteFrame = frameSf;
-        }
-        this._uiMgr?.refreshThemeVisuals();
-        this._levelCtrl?.refreshThemeVisuals();
     }
 
     private async startLevel(levelNumber: number): Promise<void> {

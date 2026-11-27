@@ -103,37 +103,28 @@ async function main() {
         await page.mouse.click(601, 431);
         await sleep(300);
 
-        // 3. Click Themes button (top-right ~ x=645, y=66)
-        await page.mouse.click(645, 66);
-        await sleep(450);
-        await page.screenshot({ path: path.join(OUT_DIR, '03_themes.png') });
-        console.log('3. Captured 03_themes.png');
-        // Close Themes (x=375+274=649, y=667-366=301)
-        await page.mouse.click(649, 301);
-        await sleep(300);
-
-        // 4. Click MY ART Gallery button (bottom-left ~ x=119, y=1161)
+        // 3. Click MY ART Gallery button (bottom-left ~ x=119, y=1161)
         await page.mouse.click(119, 1161);
         await sleep(450);
         await page.screenshot({ path: path.join(OUT_DIR, '04_gallery.png') });
-        console.log('4. Captured 04_gallery.png');
+        console.log('3. Captured 04_gallery.png');
         // Close Gallery (x=375+288=663, y=667-434=233)
         await page.mouse.click(663, 233);
         await sleep(300);
 
-        // 5. Click PLAY CTA (bottom-right ~ x=437, y=1165)
+        // 4. Click PLAY CTA (bottom-right ~ x=437, y=1165)
         await page.mouse.click(437, 1165);
         await sleep(900);
         await page.screenshot({ path: path.join(OUT_DIR, '05_game_lv1.png') });
-        console.log('5. Captured 05_game_lv1.png');
+        console.log('4. Captured 05_game_lv1.png');
 
-        // 6. Test Pause Popup (top-left ~ x=57, y=59)
+        // 5. Test Pause Popup (top-left ~ x=57, y=59)
         await page.mouse.click(57, 59);
         await sleep(400);
         await page.screenshot({ path: path.join(OUT_DIR, '06_pause.png') });
-        console.log('6. Captured 06_pause.png');
-        // Click RESUME (x=375, y=667-74=593)
-        await page.mouse.click(375, 593);
+        console.log('5. Captured 06_pause.png');
+        // Click RESUME (x=375, y=667-30=637)
+        await page.mouse.click(375, 637);
         await sleep(350);
 
         // 7. Test MELT booster (bottom-right ~ x=608, y=1248) -> verify banner + CANCEL keeps count=1!

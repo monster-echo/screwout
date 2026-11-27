@@ -1,9 +1,7 @@
 import {
     _decorator,
     BlockInputEvents,
-    Color,
     Component,
-    Graphics,
     Label,
     Node,
     Sprite,
@@ -20,7 +18,7 @@ import { ResManager } from '../core/ResManager';
 import { MonetizationManager } from '../core/MonetizationManager';
 import { ThemeManager } from '../core/ThemeManager';
 import { PixelArtDef, PixelGalleryService } from '../meta/PixelGalleryData';
-import { createButton, createLabel, createPanel } from './UIHelper';
+import { createButton, createLabel, createPanel, setPanelColor } from './UIHelper';
 
 const { ccclass } = _decorator;
 
@@ -64,7 +62,6 @@ export class UIManager extends Component {
     private _boxProgNode: Node | null = null;
     private _skillBarNode: Node | null = null;
     private _menuSetBtn: Node | null = null;
-    private _menuThemeBtn: Node | null = null;
     private _menuBottomRow: Node | null = null;
 
     // Popups
@@ -102,8 +99,6 @@ export class UIManager extends Component {
     private _soundBtnLbl: Label | null = null;
     private _vibeBtnNode: Node | null = null;
     private _vibeBtnLbl: Label | null = null;
-    private _themeNode: Node | null = null;
-    private _themeListRoot: Node | null = null;
     private _galleryNode: Node | null = null;
     private _galleryCountLbl: Label | null = null;
     private _galleryListRoot: Node | null = null;
@@ -131,7 +126,6 @@ export class UIManager extends Component {
         this.buildPaintLayer();
         this.buildLosePopup();
         this.buildSettingsPopup();
-        this.buildThemeModal();
         this.buildGalleryModal();
         this.buildToast();
 
@@ -196,13 +190,15 @@ export class UIManager extends Component {
         });
 
         // Top-center capsule "LEVEL N"
-        const lvPill = this.makeSpriteFit('lv_pill', this._hudNode, 'level_pill', 240, 46);
+        const lvPill = this.makeSpriteFit('lv_pill', this._hudNode, 'level_pill', 256, 60);
         this._lvPillNode = lvPill;
         const lW = lvPill.addComponent(Widget);
         lW.isAlignTop = true;
         lW.isAlignHorizontalCenter = true;
-        lW.top = 34;
+        lW.top = 28;
         this._levelLabel = createLabel('lv_label', lvPill, 'LEVEL 1', 25, '#ffffff', 220, 38);
+        this._levelLabel.isBold = true;
+        this._levelLabel.node.setPosition(0, 3, 0);
 
         // Right-side 3D shipping crate progress
         const boxProg = new Node('c_item');
@@ -218,16 +214,17 @@ export class UIManager extends Component {
         const xzx = this.makeSpriteFit('xzx', boxProg, 'xzx', 110, 80);
         xzx.setPosition(0, 12, 0);
         this._collectBoxNode = xzx;
-        this._progressLabel = createLabel('prog_lbl', boxProg, '0%', 24, '#0f172a', 120, 34);
+        this._progressLabel = createLabel('prog_lbl', boxProg, '0%', 24, '#701a45', 120, 34);
+        this._progressLabel.isBold = true;
         this._progressLabel.node.setPosition(0, -34, 0);
 
         // Smash-board active banner with one-tap CANCEL button (zero charge lost on cancel)
-        this._smashBanner = createPanel('SmashBanner', this._hudNode, 520, 56, '#ef4444', 245, 28);
+        this._smashBanner = createPanel('SmashBanner', this._hudNode, 520, 56, '#ec4899', 248, 28);
         this._smashBanner.setPosition(0, 232, 0);
-        const smTxt = createLabel('SmashTxt', this._smashBanner, 'Tap any board to melt!', 23, '#ffffff', 340, 38);
+        const smTxt = createLabel('SmashTxt', this._smashBanner, 'Tap any cookie to melt!', 23, '#ffffff', 340, 38);
         smTxt.isBold = true;
         smTxt.node.setPosition(-54, 0, 0);
-        createButton('btn_cancel_smash', this._smashBanner, 'CANCEL', 112, 38, '#991b1b', () => {
+        createButton('btn_cancel_smash', this._smashBanner, 'CANCEL', 112, 38, '#9d174d', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             this._actions?.onCancelSmash?.();
         }, 18, '#ffffff', 19).setPosition(186, 0, 0);
@@ -268,7 +265,7 @@ export class UIManager extends Component {
 
             const txtLbl = createLabel('txt', btn, cfg.label, 29, '#ffffff', 180, 38);
             txtLbl.isBold = true;
-            txtLbl.node.setPosition(0, -68, 0);
+            txtLbl.node.setPosition(0, -56, 0);
 
             const badge = this.makeSpriteNode('plus', btn, 'badge_count', 72, 72);
             badge.setPosition(94, 88, 0);
@@ -307,7 +304,7 @@ export class UIManager extends Component {
         bgW.isAlignTop = bgW.isAlignBottom = bgW.isAlignLeft = bgW.isAlignRight = true;
         bgW.top = bgW.bottom = bgW.left = bgW.right = 0;
 
-        // Top-left Settings gear (just like original!)
+        // Top-left Settings gear (Sweet Candy style)
         const setBtn = this.makeSpriteFit('btn_setting', this._menuNode, 'UI_icon_setting', 82, 82);
         this._menuSetBtn = setBtn;
         const setW = setBtn.addComponent(Widget);
@@ -320,46 +317,14 @@ export class UIManager extends Component {
             this.openSettings();
         });
 
-        // Top-right glossy Themes / Skins Shop pill button
-        const themeBtn = new Node('btn_themes');
-        themeBtn.setParent(this._menuNode);
-        themeBtn.addComponent(UITransform).setContentSize(172, 66);
-        const thG = themeBtn.addComponent(Graphics);
-        thG.fillColor = new Color().fromHEX('#be185d');
-        thG.roundRect(-86, -35, 172, 66, 33);
-        thG.fill();
-        thG.fillColor = new Color().fromHEX('#ec4899');
-        thG.roundRect(-86, -31, 172, 62, 31);
-        thG.fill();
-        thG.fillColor = new Color(255, 255, 255, 65);
-        thG.roundRect(-72, 2, 144, 22, 11);
-        thG.fill();
-        thG.strokeColor = Color.WHITE.clone();
-        thG.lineWidth = 4;
-        thG.roundRect(-84, -31, 168, 62, 31);
-        thG.stroke();
-        const thLbl = createLabel('lbl', themeBtn, 'THEMES', 23, '#ffffff', 156, 34);
-        thLbl.isBold = true;
-        thLbl.node.setPosition(0, -1, 0);
-        this.bindTap(themeBtn, () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            this.openThemes();
-        });
-        this._menuThemeBtn = themeBtn;
-        const thW = themeBtn.addComponent(Widget);
-        thW.isAlignTop = true;
-        thW.isAlignRight = true;
-        thW.top = 34;
-        thW.right = 24;
-
-        // Theme-aware 3D Logo (Sweet Jam candy logo in Dessert theme, classic Screw Jam in Acrylic/Nordic)
+        // Sweet Candy 3D Logo
         const logo = new Node('game_logo');
         logo.setParent(this._menuNode);
-        logo.addComponent(UITransform).setContentSize(480, 160);
+        logo.addComponent(UITransform).setContentSize(540, 216);
         const logoSp = logo.addComponent(Sprite);
         logoSp.sizeMode = Sprite.SizeMode.CUSTOM;
         this._menuLogoNode = logo;
-        logo.setPosition(0, 486, 0);
+        logo.setPosition(0, 492, 0);
         this.refreshMenuLogo();
 
         // Hero Centerpiece: Large 3D Oak Wooden Frame showing live Pixel Art progress
@@ -435,12 +400,7 @@ export class UIManager extends Component {
      */
     private drawHDArtInFrame(canvasNode: Node, art: PixelArtDef, filledCount: number, sizePx: number): Sprite | null {
         canvasNode.removeAllChildren();
-        const half = sizePx / 2;
-        const bgG = canvasNode.getComponent(Graphics) || canvasNode.addComponent(Graphics);
-        bgG.clear();
-        bgG.fillColor = new Color(248, 246, 240, 255);
-        bgG.roundRect(-half, -half, sizePx, sizePx, 18);
-        bgG.fill();
+        createPanel('peg_bg', canvasNode, sizePx, sizePx, '#f8f6f0', 255, 18);
 
         const artSize = Math.round(sizePx * 0.90);
 
@@ -498,14 +458,14 @@ export class UIManager extends Component {
         this._winNode = createPanel('GbzWinLayer', this.node, 750, 1334, '#000000', 175, 0, true);
         const card = this.makeSpriteNode('card', this._winNode, 'UI_db2', 580, 740);
 
-        // Top royal-blue header ribbon ("LEVEL COMPLETE!")
-        const ribbon = createPanel('ribbon', card, 380, 80, '#1d4ed8', 255, 22);
+        // Top strawberry-pink header ribbon ("LEVEL COMPLETE!")
+        const ribbon = createPanel('ribbon', card, 380, 80, '#ec4899', 255, 26);
         ribbon.setPosition(0, 355, 0);
         const rLbl = createLabel('win_title', ribbon, 'LEVEL COMPLETE!', 36, '#ffffff', 360, 48);
         rLbl.isBold = true;
 
-        // Center showcase panel with 3D crate overflowing with colorful 3D screws
-        const boxStage = createPanel('box_stage', card, 480, 290, '#eff6ff', 255, 24);
+        // Center showcase panel with 3D bakery box overflowing with colorful gummy screws
+        const boxStage = createPanel('box_stage', card, 480, 290, '#fff1f6', 255, 24);
         boxStage.setPosition(0, 130, 0);
 
         // 3-layer true 3D crate: back cavity -> colorful screws INSIDE box -> front flaps overlay!
@@ -532,22 +492,22 @@ export class UIManager extends Component {
         crateFront.setPosition(0, -28, 0);
 
         // "Awesome! Collected N Screws!"
-        this._winCountLbl = createLabel('win_cnt', card, 'Awesome! Collected 15 Screws!', 28, '#0284c7', 500, 42);
+        this._winCountLbl = createLabel('win_cnt', card, 'Awesome! Collected 15 Screws!', 28, '#db2777', 500, 42);
         this._winCountLbl.isBold = true;
         this._winCountLbl.node.setPosition(0, -68, 0);
 
-        // Full green 100% progress bar
-        const gBar = createPanel('green_bar', card, 460, 48, '#65a30d', 255, 16);
+        // Full honey-gold 100% progress bar
+        const gBar = createPanel('green_bar', card, 460, 48, '#f59e0b', 255, 20);
         gBar.setPosition(0, -142, 0);
         const gLbl = createLabel('g_lbl', gBar, '100%', 26, '#ffffff', 160, 34);
         gLbl.isBold = true;
 
         // Primary CTA: START CRAFTING (opens full-screen GbzPaintLayer!)
-        createButton('btn_go_paint', card, 'START CRAFTING', 360, 88, '#f97316', () => {
+        createButton('btn_go_paint', card, 'START CRAFTING', 360, 88, '#ff7a1a', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             if (this._winNode) this._winNode.active = false;
             this.openPaintLayer();
-        }, 32, '#ffffff', 30).setPosition(0, -256, 0);
+        }, 32, '#ffffff', 34).setPosition(0, -256, 0);
 
         this._winNode.active = false;
     }
@@ -635,14 +595,16 @@ export class UIManager extends Component {
             this.openGallery();
         });
 
-        // Bottom-center: Press-and-Hold SHOOT SCREWS button (magenta-pink like original!)
-        this._paintShotBtn = createPanel('btn_shot', this._paintNode, 340, 88, '#ec4899', 255, 44);
+        // Bottom-center: Press-and-Hold SHOOT SCREWS glossy 3D candy pill button!
+        this._paintShotBtn = createButton('btn_shot', this._paintNode, 'SHOOT SCREWS', 360, 90, '#ec4899', () => {}, 30, '#ffffff', 45);
         const shW = this._paintShotBtn.addComponent(Widget);
         shW.isAlignBottom = true;
         shW.isAlignHorizontalCenter = true;
         shW.bottom = 110;
-        this._paintShotLbl = createLabel('shot_lbl', this._paintShotBtn, 'SHOOT SCREWS', 30, '#ffffff', 320, 44);
-        this._paintShotLbl.isBold = true;
+        this._paintShotLbl = this._paintShotBtn.getComponentInChildren(Label);
+        this._paintShotBtn.off(Node.EventType.TOUCH_START);
+        this._paintShotBtn.off(Node.EventType.TOUCH_END);
+        this._paintShotBtn.off(Node.EventType.TOUCH_CANCEL);
 
         this._paintShotBtn.on(Node.EventType.TOUCH_START, () => {
             if (this._paintScrewsLeft <= 0) return;
@@ -662,7 +624,7 @@ export class UIManager extends Component {
         this._paintShotBtn.on(Node.EventType.TOUCH_CANCEL, stopShoot);
 
         // Bottom-center: NEXT LEVEL button (replaces SHOOT button once crate is empty!)
-        this._paintNextBtn = createButton('btn_next', this._paintNode, 'NEXT LEVEL', 350, 90, '#0ea5e9', () => {
+        this._paintNextBtn = createButton('btn_next', this._paintNode, 'NEXT LEVEL', 350, 90, '#ff8c1a', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             this.stopPaintShooting();
             if (this._paintNode) this._paintNode.active = false;
@@ -788,8 +750,11 @@ export class UIManager extends Component {
         const tx = -half + (col + 0.5) * cellStep;
         const ty = half - (row + 0.5) * cellStep;
 
-        // Shoot miniature 3D screw from cardboard crate mouth into (tx, ty)
+        // Shoot miniature 3D gummy screw from bakery box mouth into (tx, ty)
         const fly = this.makeSpriteNode(`shot_${idx}`, this._paintFlyLayer, `gbz_screw${colorId}`, 38, 38);
+        const flySf = ThemeManager.ins.getScrewSprite(colorId);
+        const flySp = fly.getComponent(Sprite);
+        if (flySp && flySf) flySp.spriteFrame = flySf;
         fly.setPosition((Math.random() - 0.5) * 120, -455, 0);
         fly.angle = Math.random() * 360;
 
@@ -842,74 +807,72 @@ export class UIManager extends Component {
     // ==================== Pause / Lose / Settings / Gallery ====================
 
     private buildPausePopup(): void {
-        this._pauseNode = createPanel('GbzExitLayer', this.node, 750, 1334, '#000000', 165, 0, true);
-        const card = this.makeSpriteNode('panel', this._pauseNode, 'UI_db2', 540, 720);
+        this._pauseNode = createPanel('GbzExitLayer', this.node, 750, 1334, '#3b0a24', 155, 0, true);
+        const card = this.makeSpriteNode('panel', this._pauseNode, 'UI_db2', 540, 640);
 
         const closeBtn = this.makeSpriteFit('btn_close', card, 'btn_close', 58, 58);
-        closeBtn.setPosition(230, 314, 0);
+        closeBtn.setPosition(230, 274, 0);
         this.bindTap(closeBtn, () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             if (this._pauseNode) this._pauseNode.active = false;
         });
 
-        createLabel('title', card, 'PAUSED', 42, '#1e293b', 280, 52).node.setPosition(0, 274, 0);
-        this._pauseLevelLbl = createLabel('lv_sub', card, 'LEVEL 1', 22, '#64748b', 240, 30);
+        const pauseTitle = createLabel('title', card, 'PAUSED', 42, '#701a45', 280, 52);
+        pauseTitle.isBold = true;
+        pauseTitle.node.setPosition(0, 236, 0);
+        this._pauseLevelLbl = createLabel('lv_sub', card, 'LEVEL 1', 22, '#be185d', 240, 30);
         this._pauseLevelLbl.isBold = true;
-        this._pauseLevelLbl.node.setPosition(0, 232, 0);
+        this._pauseLevelLbl.node.setPosition(0, 194, 0);
 
         // Quick inline Sound & Haptics toggle row (players can mute mid-level without quitting!)
-        const pSound = createButton('p_sound', card, 'SFX: ON', 180, 56, '#0ea5e9', () => {
+        const pSound = createButton('p_sound', card, 'SFX: ON', 180, 56, '#ec4899', () => {
             DataManager.ins.soundEnabled = !DataManager.ins.soundEnabled;
             DataManager.ins.save();
             this.refreshSettingsLabels();
             if (DataManager.ins.soundEnabled) AudioManager.ins.play(AudioClips.GAME_CLICK);
-        }, 22, '#ffffff', 18);
-        pSound.setPosition(-98, 168, 0);
+        }, 22, '#ffffff', 22);
+        pSound.setPosition(-98, 128, 0);
         this._pauseSoundNode = pSound;
         this._pauseSoundLbl = pSound.getComponentInChildren(Label);
 
-        const pVibe = createButton('p_vibe', card, 'HAPTIC: ON', 180, 56, '#10b981', () => {
+        const pVibe = createButton('p_vibe', card, 'HAPTIC: ON', 180, 56, '#14b8a6', () => {
             DataManager.ins.vibrateEnabled = !DataManager.ins.vibrateEnabled;
             DataManager.ins.save();
             this.refreshSettingsLabels();
             if (DataManager.ins.vibrateEnabled) MonetizationManager.ins.triggerHaptic('medium');
-        }, 21, '#ffffff', 18);
-        pVibe.setPosition(98, 168, 0);
+        }, 21, '#ffffff', 22);
+        pVibe.setPosition(98, 128, 0);
         this._pauseVibeNode = pVibe;
         this._pauseVibeLbl = pVibe.getComponentInChildren(Label);
 
-        createButton('btn_continue', card, 'RESUME', 360, 74, '#22c55e', () => {
+        createButton('btn_continue', card, 'RESUME', 360, 78, '#22c55e', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             if (this._pauseNode) this._pauseNode.active = false;
-        }, 30, '#ffffff', 22).setPosition(0, 74, 0);
+        }, 30, '#ffffff', 28).setPosition(0, 30, 0);
 
-        createButton('btn_theme', card, 'THEMES', 360, 74, '#ec4899', () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            if (this._pauseNode) this._pauseNode.active = false;
-            this.openThemes();
-        }, 30, '#ffffff', 22).setPosition(0, -18, 0);
-
-        createButton('btn_restart', card, 'RESTART', 360, 74, '#f59e0b', () => {
+        createButton('btn_restart', card, 'RESTART', 360, 78, '#ff8c1a', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             if (this._pauseNode) this._pauseNode.active = false;
             this._actions?.onRestart();
-        }, 30, '#ffffff', 22).setPosition(0, -110, 0);
+        }, 30, '#ffffff', 28).setPosition(0, -72, 0);
 
-        createButton('btn_home', card, 'HOME', 360, 74, '#0ea5e9', () => {
+        createButton('btn_home', card, 'HOME', 360, 78, '#ec4899', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             if (this._pauseNode) this._pauseNode.active = false;
             this._actions?.onBackMenu();
-        }, 30, '#ffffff', 22).setPosition(0, -202, 0);
+        }, 30, '#ffffff', 28).setPosition(0, -174, 0);
 
         this._pauseNode.active = false;
     }
 
     private buildLosePopup(): void {
-        this._loseNode = createPanel('GbzLoseFullLayer', this.node, 750, 1334, '#000000', 180, 0, true);
+        this._loseNode = createPanel('GbzLoseFullLayer', this.node, 750, 1334, '#3b0a24', 165, 0, true);
         const card = this.makeSpriteNode('card', this._loseNode, 'UI_db2', 560, 520);
 
-        createLabel('lose_title', card, 'TRAY FULL!', 46, '#ef4444', 440, 58).node.setPosition(0, 170, 0);
-        createLabel('lose_sub', card, 'Watch a short ad to clear the tray & continue!', 22, '#475569', 480, 44).node.setPosition(0, 96, 0);
+        const loseTitle = createLabel('lose_title', card, 'TRAY FULL!', 46, '#e11d48', 440, 58);
+        loseTitle.isBold = true;
+        loseTitle.node.setPosition(0, 170, 0);
+        createLabel('lose_sub', card, 'Watch a short ad to clear the tray & continue!', 22, '#831843', 480, 44).node.setPosition(0, 96, 0);
 
         createButton('btn_revive_ad', card, 'FREE REVIVE (AD)', 400, 90, '#22c55e', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
@@ -917,19 +880,19 @@ export class UIManager extends Component {
                 if (this._loseNode) this._loseNode.active = false;
                 this._actions?.onRevive();
             });
-        }, 30, '#ffffff', 26).setPosition(0, -24, 0);
+        }, 30, '#ffffff', 30).setPosition(0, -24, 0);
 
-        createButton('btn_retry', card, 'TRY AGAIN', 320, 68, '#f59e0b', () => {
+        createButton('btn_retry', card, 'TRY AGAIN', 320, 68, '#ff8c1a', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             if (this._loseNode) this._loseNode.active = false;
             this._actions?.onRestart();
-        }, 26, '#ffffff', 22).setPosition(0, -138, 0);
+        }, 26, '#ffffff', 26).setPosition(0, -138, 0);
 
         this._loseNode.active = false;
     }
 
     private buildSettingsPopup(): void {
-        this._settingsNode = createPanel('GbzSettingLayer', this.node, 750, 1334, '#000000', 170, 0, true);
+        this._settingsNode = createPanel('GbzSettingLayer', this.node, 750, 1334, '#3b0a24', 155, 0, true);
         const card = this.makeSpriteNode('panel', this._settingsNode, 'UI_db2', 540, 560);
 
         const closeBtn = this.makeSpriteFit('btn_close', card, 'btn_close', 58, 58);
@@ -939,39 +902,41 @@ export class UIManager extends Component {
             if (this._settingsNode) this._settingsNode.active = false;
         });
 
-        createLabel('title', card, 'SETTINGS', 40, '#1e293b', 300, 52).node.setPosition(0, 206, 0);
+        const setTitle = createLabel('title', card, 'SETTINGS', 40, '#701a45', 300, 52);
+        setTitle.isBold = true;
+        setTitle.node.setPosition(0, 206, 0);
 
-        const soundBtn = createButton('btn_sound', card, 'SOUND FX: ON', 380, 74, '#0ea5e9', () => {
+        const soundBtn = createButton('btn_sound', card, 'SOUND FX: ON', 380, 74, '#ec4899', () => {
             DataManager.ins.soundEnabled = !DataManager.ins.soundEnabled;
             DataManager.ins.save();
             this.refreshSettingsLabels();
             if (DataManager.ins.soundEnabled) AudioManager.ins.play(AudioClips.GAME_CLICK);
-        }, 26, '#ffffff', 22);
+        }, 26, '#ffffff', 26);
         soundBtn.setPosition(0, 96, 0);
         this._soundBtnNode = soundBtn;
         this._soundBtnLbl = soundBtn.getComponentInChildren(Label);
 
-        const vibeBtn = createButton('btn_vibe', card, 'HAPTICS: ON', 380, 74, '#10b981', () => {
+        const vibeBtn = createButton('btn_vibe', card, 'HAPTICS: ON', 380, 74, '#14b8a6', () => {
             DataManager.ins.vibrateEnabled = !DataManager.ins.vibrateEnabled;
             DataManager.ins.save();
             this.refreshSettingsLabels();
             if (DataManager.ins.vibrateEnabled) MonetizationManager.ins.triggerHaptic('medium');
-        }, 26, '#ffffff', 22);
+        }, 26, '#ffffff', 26);
         vibeBtn.setPosition(0, 0, 0);
         this._vibeBtnNode = vibeBtn;
         this._vibeBtnLbl = vibeBtn.getComponentInChildren(Label);
 
-        createButton('btn_privacy', card, 'AD PRIVACY & POLICY', 380, 68, '#64748b', () => {
+        createButton('btn_privacy', card, 'AD PRIVACY & POLICY', 380, 68, '#a855f7', () => {
             AudioManager.ins.play(AudioClips.GAME_CLICK);
             MonetizationManager.ins.showPrivacyOptions();
-        }, 23, '#ffffff', 20).setPosition(0, -96, 0);
+        }, 23, '#ffffff', 24).setPosition(0, -96, 0);
 
         createLabel(
             'ver_lbl',
             card,
-            `Screw Out: Sweet Jam  v${MonetizationManager.APP_VERSION}`,
+            `Screw Out: Sweet Candy Jam  v${MonetizationManager.APP_VERSION}`,
             20,
-            '#94a3b8',
+            '#9d5c78',
             440,
             30,
         ).node.setPosition(0, -196, 0);
@@ -979,107 +944,8 @@ export class UIManager extends Component {
         this._settingsNode.active = false;
     }
 
-    private buildThemeModal(): void {
-        this._themeNode = createPanel('ThemeShopLayer', this.node, 750, 1334, '#000000', 180, 0, true);
-        const card = this.makeSpriteNode('panel', this._themeNode, 'UI_db2', 640, 820);
-
-        const closeBtn = this.makeSpriteFit('btn_close', card, 'btn_close', 58, 58);
-        closeBtn.setPosition(274, 366, 0);
-        this.bindTap(closeBtn, () => {
-            AudioManager.ins.play(AudioClips.GAME_CLICK);
-            if (this._themeNode) this._themeNode.active = false;
-        });
-
-        createLabel('title', card, 'THEMES & SKINS', 38, '#0f172a', 420, 48).node.setPosition(0, 344, 0);
-        createLabel('sub', card, 'Switch visual styles anytime for maximum comfort!', 20, '#64748b', 520, 32)
-            .node.setPosition(0, 294, 0);
-
-        this._themeListRoot = new Node('theme_list');
-        this._themeListRoot.setParent(card);
-        this._themeListRoot.setPosition(0, -28, 0);
-
-        this._themeNode.active = false;
-    }
-
-    private refreshThemeModal(): void {
-        if (!this._themeListRoot) return;
-        this._themeListRoot.removeAllChildren();
-
-        const themes = ThemeManager.ins.getAllThemes();
-        const activeId = ThemeManager.ins.activeId;
-
-        themes.forEach((t, idx) => {
-            const y = 200 - idx * 204;
-            const isActive = t.id === activeId;
-            const unlocked = ThemeManager.ins.isUnlocked(t.id);
-
-            const row = createPanel(
-                `theme_${t.id}`,
-                this._themeListRoot!,
-                560,
-                180,
-                isActive ? '#fef3c7' : '#f8fafc',
-                255,
-                24,
-            );
-            row.setPosition(0, y, 0);
-
-            // Crisp active border stroke
-            const rowG = row.getComponent(Graphics);
-            if (rowG) {
-                rowG.strokeColor = new Color().fromHEX(isActive ? '#f59e0b' : '#e2e8f0');
-                rowG.lineWidth = isActive ? 5 : 2;
-                rowG.roundRect(-280, -90, 560, 180, 24);
-                rowG.stroke();
-            }
-
-            // Unified left axis (x = -246) for swatches, title, and subtitle!
-            t.swatchColors.forEach((hex, si) => {
-                const sw = createPanel(`sw_${si}`, row, 40, 40, hex, 255, 20);
-                sw.setPosition(-226 + si * 34, 42, 0);
-            });
-
-            const titleLbl = createLabel('name', row, t.name, 28, '#0f172a', 340, 36);
-            titleLbl.isBold = true;
-            titleLbl.horizontalAlign = Label.HorizontalAlign.LEFT;
-            titleLbl.node.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
-            titleLbl.node.setPosition(-246, -8, 0);
-
-            const subLbl = createLabel('desc', row, t.subtitle, 18, '#64748b', 340, 28);
-            subLbl.horizontalAlign = Label.HorizontalAlign.LEFT;
-            subLbl.node.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
-            subLbl.node.setPosition(-246, -46, 0);
-
-            if (isActive) {
-                const badge = createPanel('active_badge', row, 152, 62, '#22c55e', 255, 20);
-                badge.setPosition(184, 0, 0);
-                const lbl = createLabel('lbl', badge, 'ACTIVE', 24, '#ffffff', 140, 32);
-                lbl.isBold = true;
-            } else if (unlocked) {
-                createButton('btn_equip', row, 'EQUIP', 152, 64, '#0ea5e9', () => {
-                    AudioManager.ins.play(AudioClips.GAME_CLICK);
-                    ThemeManager.ins.setTheme(t.id);
-                    this.refreshThemeModal();
-                    this.showToast(`Equipped ${t.name}!`);
-                }, 24, '#ffffff', 20).setPosition(184, 0, 0);
-            } else {
-                createButton('btn_unlock', row, 'FREE (AD)', 158, 62, '#ec4899', () => {
-                    AudioManager.ins.play(AudioClips.GAME_CLICK);
-                    MonetizationManager.ins.showRewardedAd('unlock_theme', () => {
-                        ThemeManager.ins.unlockTheme(t.id);
-                        ThemeManager.ins.setTheme(t.id);
-                        this.refreshThemeModal();
-                        this.showToast(`Unlocked ${t.name}!`);
-                    });
-                }, 22, '#ffffff', 20).setPosition(184, 14, 0);
-                createLabel('lv_hint', row, `or reach Lv.${t.unlockLevel}`, 16, '#94a3b8', 160, 24)
-                    .node.setPosition(184, -38, 0);
-            }
-        });
-    }
-
     private buildGalleryModal(): void {
-        this._galleryNode = createPanel('XiangCeLayer', this.node, 750, 1334, '#000000', 180, 0, true);
+        this._galleryNode = createPanel('XiangCeLayer', this.node, 750, 1334, '#3b0a24', 165, 0, true);
         const card = this.makeSpriteNode('panel', this._galleryNode, 'UI_db2', 660, 960);
 
         const closeBtn = this.makeSpriteFit('btn_close', card, 'btn_close', 58, 58);
@@ -1089,8 +955,10 @@ export class UIManager extends Component {
             if (this._galleryNode) this._galleryNode.active = false;
         });
 
-        createLabel('title', card, 'MY ARTWORKS', 38, '#0f172a', 420, 48).node.setPosition(0, 416, 0);
-        this._galleryCountLbl = createLabel('sub', card, 'Collected: 0 / 6', 24, '#0284c7', 420, 34);
+        const galTitle = createLabel('title', card, 'MY ARTWORKS', 38, '#701a45', 420, 48);
+        galTitle.isBold = true;
+        galTitle.node.setPosition(0, 416, 0);
+        this._galleryCountLbl = createLabel('sub', card, 'Collected: 0 / 6', 24, '#db2777', 420, 34);
         this._galleryCountLbl.isBold = true;
         this._galleryCountLbl.node.setPosition(0, 366, 0);
 
@@ -1145,8 +1013,8 @@ export class UIManager extends Component {
                 tLbl.isBold = true;
                 tLbl.node.setPosition(0, -64, 0);
             } else if (idx === curIndex) {
-                // State 2: IN PROGRESS — HD outline + FILLED vertical reveal + yellow progress bar
-                const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 182, 178, '#e0f2fe', 255, 18);
+                // State 2: IN PROGRESS — HD outline + FILLED vertical reveal + candy progress bar
+                const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 182, 178, '#fce7f3', 255, 18);
                 tile.setPosition(x, y, 0);
                 const wf = this.makeSpriteNode('wf', tile, 'wood_frame', 116, 116);
                 wf.setPosition(0, 22, 0);
@@ -1170,13 +1038,13 @@ export class UIManager extends Component {
                 pLbl.isBold = true;
             } else {
                 // State 3: LOCKED MYSTERY "?"
-                const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 182, 178, '#e2e8f0', 255, 18);
+                const tile = createPanel(`art_${art.id}`, this._galleryListRoot!, 182, 178, '#f5e6ee', 255, 18);
                 tile.setPosition(x, y, 0);
-                const qCircle = createPanel('q_bg', tile, 82, 82, '#94a3b8', 255, 41);
+                const qCircle = createPanel('q_bg', tile, 82, 82, '#e2a8c4', 255, 41);
                 qCircle.setPosition(0, 14, 0);
                 const qLbl = createLabel('q_txt', qCircle, '?', 48, '#ffffff', 72, 60);
                 qLbl.isBold = true;
-                createLabel('lock_lbl', tile, 'LOCKED', 16, '#64748b', 140, 22).node.setPosition(0, -58, 0);
+                createLabel('lock_lbl', tile, 'LOCKED', 16, '#9d5c78', 140, 22).node.setPosition(0, -58, 0);
                 this.bindTap(tile, () => {
                     AudioManager.ins.play(AudioClips.CLICK_ERROR);
                     this.showToast('Complete current artwork to unlock!');
@@ -1188,7 +1056,7 @@ export class UIManager extends Component {
     // ==================== Toast ====================
 
     private buildToast(): void {
-        this._toastNode = createPanel('Toast', this.node, 480, 62, '#0f172a', 235, 31);
+        this._toastNode = createPanel('Toast', this.node, 480, 62, '#701a45', 240, 31);
         this._toastNode.setPosition(0, 140, 0);
         this._toastOp = this._toastNode.addComponent(UIOpacity);
         this._toastOp.opacity = 0;
@@ -1247,22 +1115,6 @@ export class UIManager extends Component {
         if (this._galleryNode) this._galleryNode.active = true;
     }
 
-    public openThemes(): void {
-        this.refreshThemeModal();
-        if (this._themeNode) this._themeNode.active = true;
-    }
-
-    public refreshThemeVisuals(): void {
-        const bgSf = ThemeManager.ins.getMenuBgSprite();
-        if (this._menuBgSprite && bgSf) {
-            this._menuBgSprite.spriteFrame = bgSf;
-        }
-        if (this._paintBgSprite && bgSf) {
-            this._paintBgSprite.spriteFrame = bgSf;
-        }
-        this.refreshMenuLogo();
-    }
-
     private refreshMenuLogo(): void {
         if (!this._menuLogoNode) return;
         const sp = this._menuLogoNode.getComponent(Sprite);
@@ -1271,8 +1123,8 @@ export class UIManager extends Component {
         if (sp && sf) {
             sp.spriteFrame = sf;
             if (ui && sf.originalSize.width > 0 && sf.originalSize.height > 0) {
-                const maxW = ThemeManager.ins.activeId === 'dessert' ? 490 : 460;
-                const maxH = ThemeManager.ins.activeId === 'dessert' ? 168 : 112;
+                const maxW = 540;
+                const maxH = 216;
                 const sc = Math.min(maxW / sf.originalSize.width, maxH / sf.originalSize.height);
                 ui.setContentSize(Math.round(sf.originalSize.width * sc), Math.round(sf.originalSize.height * sc));
             }
@@ -1299,10 +1151,9 @@ export class UIManager extends Component {
         };
 
         bumpTop(this._pauseBtnNode, 22);
-        bumpTop(this._lvPillNode, 34);
+        bumpTop(this._lvPillNode, 28);
         bumpTop(this._boxProgNode, 365);
         bumpTop(this._menuSetBtn, 26);
-        bumpTop(this._menuThemeBtn, 34);
         bumpBot(this._skillBarNode, 26);
         bumpBot(this._menuBottomRow, 96);
     }
@@ -1314,7 +1165,6 @@ export class UIManager extends Component {
         if (this._paintNode) this._paintNode.active = false;
         if (this._loseNode) this._loseNode.active = false;
         if (this._settingsNode) this._settingsNode.active = false;
-        if (this._themeNode) this._themeNode.active = false;
         if (this._galleryNode) this._galleryNode.active = false;
     }
 
@@ -1370,47 +1220,18 @@ export class UIManager extends Component {
         if (this._soundBtnLbl) {
             this._soundBtnLbl.string = `SOUND FX: ${on ? 'ON' : 'OFF'}`;
         }
-        if (this._soundBtnNode) {
-            const g = this._soundBtnNode.getComponent(Graphics);
-            if (g) {
-                g.clear();
-                g.fillColor = new Color().fromHEX(on ? '#0ea5e9' : '#94a3b8');
-                g.roundRect(-190, -37, 380, 74, 22);
-                g.fill();
-            }
-        }
+        setPanelColor(this._soundBtnNode, on ? '#ec4899' : '#c09bb0');
+
         const vibeOn = DataManager.ins.vibrateEnabled;
         if (this._vibeBtnLbl) {
             this._vibeBtnLbl.string = `HAPTICS: ${vibeOn ? 'ON' : 'OFF'}`;
         }
-        if (this._vibeBtnNode) {
-            const g = this._vibeBtnNode.getComponent(Graphics);
-            if (g) {
-                g.clear();
-                g.fillColor = new Color().fromHEX(vibeOn ? '#10b981' : '#94a3b8');
-                g.roundRect(-190, -37, 380, 74, 22);
-                g.fill();
-            }
-        }
+        setPanelColor(this._vibeBtnNode, vibeOn ? '#14b8a6' : '#c09bb0');
+
         if (this._pauseSoundLbl) this._pauseSoundLbl.string = `SFX: ${on ? 'ON' : 'OFF'}`;
-        if (this._pauseSoundNode) {
-            const g = this._pauseSoundNode.getComponent(Graphics);
-            if (g) {
-                g.clear();
-                g.fillColor = new Color().fromHEX(on ? '#0ea5e9' : '#94a3b8');
-                g.roundRect(-90, -28, 180, 56, 18);
-                g.fill();
-            }
-        }
+        setPanelColor(this._pauseSoundNode, on ? '#ec4899' : '#c09bb0');
+
         if (this._pauseVibeLbl) this._pauseVibeLbl.string = `HAPTIC: ${vibeOn ? 'ON' : 'OFF'}`;
-        if (this._pauseVibeNode) {
-            const g = this._pauseVibeNode.getComponent(Graphics);
-            if (g) {
-                g.clear();
-                g.fillColor = new Color().fromHEX(vibeOn ? '#10b981' : '#94a3b8');
-                g.roundRect(-90, -28, 180, 56, 18);
-                g.fill();
-            }
-        }
+        setPanelColor(this._pauseVibeNode, vibeOn ? '#14b8a6' : '#c09bb0');
     }
 }

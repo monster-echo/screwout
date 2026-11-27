@@ -12,6 +12,25 @@
     }
   ],
   "startScene": "a9c12e40-8b14-4d62-9f31-10a8b7c4d201",
+  "splashScreen": {
+    "displayRatio": 0.56,
+    "totalTime": 600,
+    "watermarkLocation": "default",
+    "autoFit": true,
+    "logo": {
+      "type": "custom",
+      "image": "settings/splash_logo.png"
+    },
+    "background": {
+      "type": "color",
+      "color": {
+        "x": 1,
+        "y": 0.929,
+        "z": 0.953,
+        "w": 1
+      }
+    }
+  },
   "packages": {
     "android": {
       "packageName": "tech.zhongbei.screwout",

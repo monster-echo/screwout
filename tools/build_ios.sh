@@ -191,6 +191,7 @@ fi
 cp "$BRIDGE_SRC/AdMobBridge.mm" "$BRIDGE_SRC/AdMobBridge.h" "$TEMPLATE_IOS/"
 
 cocos_build
+python3 "$ROOT/tools/apply_custom_splash.py"
 
 # Shared plist helpers.
 plist_set() {

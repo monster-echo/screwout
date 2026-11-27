@@ -33,72 +33,44 @@ export const AudioClips = {
 
 export type AudioClipKey = typeof AudioClips[keyof typeof AudioClips];
 
-export type ThemeId = 'dessert' | 'acrylic' | 'nordic';
+export type ThemeId = 'dessert';
 
 export interface ThemeConfig {
     id: ThemeId;
     name: string;
     subtitle: string;
-    unlockLevel: number;
     boardPalette: string[];
     frameTintHex: string;
-    swatchColors: [string, string, string];
     useGummyBounce: boolean;
     useCrumbParticles: boolean;
 }
 
-/** Original 9-color pastel palette for stacked glass/acrylic boards */
-export const BOARD_PALETTE: string[] = [
-    '#91f99e',
-    '#dbff86',
-    '#8de8fc',
-    '#8ec0ff',
-    '#b189ff',
-    '#fca2e3',
-    '#ff8080',
-    '#ffb777',
-    '#ffe775',
-];
-
-/** Sweet Dessert luxury macaron & candy-glaze palette (high clarity + appetizing tones) */
+/** Frosted sugar-cookie royal icing palette (creamy pastel tones that make 10 vivid gummy screws pop!) */
 export const DESSERT_BOARD_PALETTE: string[] = [
-    '#ff8fb8', // Rose macaron
-    '#ffe066', // Honey lemon glaze
-    '#7ce8b8', // Pistachio mint
-    '#78d2ff', // Sky frost blue
-    '#c49bff', // Lavender taro cream
-    '#ffa870', // Apricot peach glaze
-    '#ff7a8a', // Berry sorbet
-    '#b5eb86', // Matcha lime cream
-    '#9bb8ff', // Periwinkle frost
+    '#fff3e6', // Vanilla cream glaze (hero cookie color!)
+    '#ffb8da', // Strawberry pink frosting
+    '#d9b8ff', // Lavender taro icing
+    '#b8f2e0', // Pistachio mint icing
+    '#ffe99e', // Honey lemon cream
+    '#ffc9a8', // Apricot peach icing
+    '#bde6ff', // Cotton candy sky icing
+    '#ffa8c8', // Berry rose glaze
+    '#d6f2a8', // Matcha cream icing
 ];
 
-/** Minimalist Nordic Morandi matte palette (ultra-clean low-fatigue clarity) */
-export const NORDIC_BOARD_PALETTE: string[] = [
-    '#a3c4bc',
-    '#d8c3a5',
-    '#9fb8d4',
-    '#c9ada7',
-    '#b5c99a',
-    '#e2c290',
-    '#b8b8d1',
-    '#d4a373',
-    '#98c1d9',
-];
-
-/** Fallback tint colors for screw/box color IDs 1..10 */
+/** Exact candy colors matching dessert_screw1..10 (used for colored gummy screw shafts & fallback tints) */
 export const SCREW_FALLBACK_COLORS: string[] = [
     '#ffffff',
-    '#ff4d4f', // 1 red
-    '#ffa940', // 2 orange
-    '#ffec3d', // 3 yellow
-    '#73d13d', // 4 green
-    '#36cfc9', // 5 cyan
-    '#40a9ff', // 6 blue
-    '#9254de', // 7 purple
-    '#f759ab', // 8 pink
-    '#8c6239', // 9 brown
-    '#d9d9d9', // 10 silver
+    '#f42b3d', // 1: Cherry Gummy Red
+    '#ffd21f', // 2: Lemon-Honey Yellow
+    '#28c754', // 3: Apple-Mint Green
+    '#3486ff', // 4: Blueberry Soda Blue
+    '#a64dff', // 5: Grape Gummy Purple
+    '#ff8418', // 6: Tangerine Orange
+    '#ff6bb5', // 7: Strawberry Pink
+    '#14d9c8', // 8: Mint-Teal Cyan
+    '#fff4e4', // 9: Vanilla Pearl
+    '#7c4527', // 10: Glossy Cocoa Chocolate
 ];
 
 export interface BoardData {

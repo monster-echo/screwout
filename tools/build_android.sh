@@ -90,11 +90,14 @@ echo "ndk: $ANDROID_NDK"
 RESOLVED="$ROOT/.tmp/build-config-android.json"
 mkdir -p "$ROOT/.tmp"
 python3 - "$ROOT/tools/build-config-android.json" "$RESOLVED" \
-	"$ANDROID_SDK" "$ANDROID_NDK" <<'PY'
+	"$ANDROID_SDK" "$ANDROID_NDK" "$ROOT" <<'PY'
 import json, os, sys
-src, dst, sdk, ndk = sys.argv[1:]
+src, dst, sdk, ndk, root = sys.argv[1:]
 with open(src) as f:
     cfg = json.load(f)
+splash = cfg.get('splashScreen', {}).get('logo', {})
+if splash.get('image') and not os.path.isabs(splash['image']):
+    splash['image'] = os.path.join(root, splash['image'])
 android = cfg.setdefault('packages', {}).setdefault('android', {})
 android['sdkPath'] = sdk
 android['ndkPath'] = ndk
@@ -113,6 +116,7 @@ if [[ $rc != 36 && $rc != 0 ]]; then
 	echo "Cocos CLI build failed with exit code $rc (36=ok, 32=bad params, 34=build error)" >&2
 	exit 1
 fi
+python3 "$ROOT/tools/apply_custom_splash.py"
 if [[ ! -d "$PROJ_DIR" ]]; then
 	echo "No Gradle project at $PROJ_DIR" >&2
 	exit 1

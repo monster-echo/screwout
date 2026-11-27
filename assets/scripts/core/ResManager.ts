@@ -35,14 +35,12 @@ export class ResManager {
             this.loadImageDirAsSprites('sprites/boards', this._boardSprites),
             this.loadImageDirAsSprites('sprites/ui_orig', this._uiSprites),
             this.loadImageDirAsSprites('sprites/themes/dessert', this._themeSprites),
-            this.loadImageDirAsSprites('sprites/themes/nordic', this._themeSprites),
             this.loadImageDirAsSprites('paint', this._paintSprites),
             this.loadDifficultyConfig(),
             this.loadArtManifest(),
-            this.loadSpineAsset('spine/touch/touch').then((d) => { this._touchSpine = d; }),
         ]);
         console.log(
-            `[ResManager] loaded games=${this._gameSprites.size}, boards=${this._boardSprites.size}, ui=${this._uiSprites.size}, themes=${this._themeSprites.size}, paint=${this._paintSprites.size}, arts=${this._artManifest.length}, touchSpine=${!!this._touchSpine}`,
+            `[ResManager] loaded games=${this._gameSprites.size}, boards=${this._boardSprites.size}, ui=${this._uiSprites.size}, themes=${this._themeSprites.size}, paint=${this._paintSprites.size}, arts=${this._artManifest.length}`,
         );
         this._coreLoaded = true;
     }

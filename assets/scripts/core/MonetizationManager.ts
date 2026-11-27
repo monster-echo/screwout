@@ -5,8 +5,7 @@ import { getActiveAdMobUnits, isAdMobTestMode } from './AdMobConfig';
 export type RewardedPlacement =
     | 'unlock_box'
     | 'revive'
-    | 'skill_refill'
-    | 'unlock_theme';
+    | 'skill_refill';
 
 export type AdMobCallbackEvent =
     | 'sdk_ready'

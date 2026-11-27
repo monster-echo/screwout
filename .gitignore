@@ -11,3 +11,5 @@ export/
 dist/
 .tmp/
 release.env
+__pycache__/
+*.pyc

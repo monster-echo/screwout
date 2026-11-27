@@ -38,4 +38,11 @@ you.
 
 @property(nonatomic, readonly) ViewController *viewController;
 @property(nonatomic, readonly) AppDelegateBridge *appDelegateBridge;
+@property(nonatomic, strong) UIWindow *window;
+@property(nonatomic, strong) NSDictionary *launchOptions;
+@property(nonatomic, assign) BOOL launchedBridge;
+@property(nonatomic, strong) UIImageView *launchOverlay;
+
+- (void)startCocosInWindowScene:(UIWindowScene *)windowScene API_AVAILABLE(ios(13.0));
++ (void)hideLaunchOverlay:(NSString *)reason;
 @end

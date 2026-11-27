@@ -2,16 +2,16 @@
   "ver": "1.0.27",
   "importer": "image",
   "imported": true,
-  "uuid": "f22914f4-1ee5-4067-a84d-9c1b32e72bcf",
+  "uuid": "fea124b3-46dc-41e0-abf8-9bc713e768db",
   "files": [
-    ".jpg",
-    ".json"
+    ".json",
+    ".png"
   ],
   "subMetas": {
     "6c48a": {
       "importer": "texture",
-      "uuid": "f22914f4-1ee5-4067-a84d-9c1b32e72bcf@6c48a",
-      "displayName": "bg_nordic_game",
+      "uuid": "fea124b3-46dc-41e0-abf8-9bc713e768db@6c48a",
+      "displayName": "ui_white_pill_btn",
       "id": "6c48a",
       "name": "texture",
       "userData": {
@@ -22,7 +22,7 @@
         "mipfilter": "none",
         "anisotropy": 0,
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "f22914f4-1ee5-4067-a84d-9c1b32e72bcf",
+        "imageUuidOrDatabaseUri": "fea124b3-46dc-41e0-abf8-9bc713e768db",
         "visible": false
       },
       "ver": "1.0.22",
@@ -35,8 +35,8 @@
   },
   "userData": {
     "type": "texture",
-    "hasAlpha": false,
+    "hasAlpha": true,
     "fixAlphaTransparencyArtifacts": false,
-    "redirect": "f22914f4-1ee5-4067-a84d-9c1b32e72bcf@6c48a"
+    "redirect": "fea124b3-46dc-41e0-abf8-9bc713e768db@6c48a"
   }
 }
